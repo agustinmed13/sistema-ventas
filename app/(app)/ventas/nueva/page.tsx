@@ -126,7 +126,7 @@ export default function NuevaVentaPage() {
         }
         const cuerpo = await respuesta.json();
         if (!cancelado) {
-          setResultados(cuerpo.datos);
+          setResultados(cuerpo.data);
           setResaltado(0);
           setErrorBusqueda('');
         }
@@ -278,18 +278,11 @@ export default function NuevaVentaPage() {
         return;
       }
 
-      // Error: la API responde { error: { codigo, mensaje, detalles } }
+      // Error: la API responde { error: { code, message, details } }
+      // (consigna, seccion 11.1). El mensaje del servidor ya viene completo:
+      // en STOCK_INSUFICIENTE incluye el producto, lo disponible y lo pedido.
       const cuerpo = await respuesta.json().catch(() => null);
-      let mensaje = cuerpo?.error?.mensaje || 'No se pudo confirmar la venta.';
-
-      // Sin stock: el servidor dice qué producto fue y cuánto había
-      if (cuerpo?.error?.codigo === 'STOCK_INSUFICIENTE') {
-        const d = cuerpo.error.detalles;
-        const renglon = renglones.find((r) => r.productoId === d.productoId);
-        const nombre = renglon ? renglon.descripcion : `producto ${d.productoId}`;
-        mensaje = `${mensaje} ${nombre}: hay ${d.disponible}, se pidieron ${d.solicitado}.`;
-      }
-      setError(mensaje);
+      setError(cuerpo?.error?.message || 'No se pudo confirmar la venta.');
     } catch {
       setError('No se pudo conectar con el servidor.');
     }
