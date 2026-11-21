@@ -1,5 +1,5 @@
 // /api/clientes
-//   GET   listado con búsqueda y paginación (RF-C1)
+//   GET   listado con búsqueda, saldos y paginación (RF-C1, RF-C6)
 //   POST  alta de un cliente (RF-C2)
 //
 // Adaptador fino (AGENTS.md sección 3): exige la sesión, lee el pedido,
@@ -10,7 +10,7 @@ import { obtenerUsuarioActual } from '@/lib/auth';
 import { ApiError, manejarError } from '@/lib/errores';
 import { listarClientes, crearCliente } from '@/lib/servicios/clientes';
 
-// GET /api/clientes?q=perez&page=1&pageSize=20
+// GET /api/clientes?q=perez&conDeuda=true&orden=saldo&page=1&pageSize=20
 export async function GET(request: Request) {
   try {
     // Toda ruta exige sesión (sección 11.1)
@@ -25,6 +25,8 @@ export async function GET(request: Request) {
     const parametros = new URL(request.url).searchParams;
     const resultado = await listarClientes(usuario, {
       q: parametros.get('q') || null,
+      conDeuda: parametros.get('conDeuda') || null,
+      orden: parametros.get('orden') || null,
       page: parametros.get('page') || null,
       pageSize: parametros.get('pageSize') || null,
     });
