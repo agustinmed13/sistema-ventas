@@ -101,8 +101,8 @@ export async function obtenerUsuarioActual() {
     .select({
       id: usuarios.id,
       nombre: usuarios.nombre,
-      acceso: usuarios.acceso,
-      perfil: usuarios.perfil,
+      email: usuarios.email,
+      rol: usuarios.rol,
       activo: usuarios.activo,
     })
     .from(usuarios)

@@ -32,7 +32,7 @@ const HASH_DE_RELLENO = '$2b$10$yywJMjD0N8yEv9bwnydC.uzBRh/1Tp3ch6DMjgFrg.EJOiZf
 
 // ─────────────────────────────────────────────────────────────
 // POST /api/sesion — iniciar sesión
-// Recibe: { "acceso": "admin", "contrasena": "..." }
+// Recibe: { "email": "admin@mostrador.com", "contrasena": "..." }
 // ─────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
@@ -46,25 +46,25 @@ export async function POST(request: Request) {
     }
 
     // Un JSON válido también puede ser null, un número o un texto suelto.
-    // Necesitamos un objeto para poder leer cuerpo.acceso.
+    // Necesitamos un objeto para poder leer cuerpo.email.
     if (typeof cuerpo !== 'object' || cuerpo === null) {
       return errorSolicitudInvalida('Se esperaba un objeto JSON.');
     }
 
     // 2. Validar los campos. Chequeamos que sean texto antes de usar .trim(),
     //    porque si llega un número, .trim() no existe y explotaría.
-    if (typeof cuerpo.acceso !== 'string' || cuerpo.acceso.trim() === '') {
-      return errorValidacion('El acceso es obligatorio.', { campo: 'acceso' });
+    if (typeof cuerpo.email !== 'string' || cuerpo.email.trim() === '') {
+      return errorValidacion('El email es obligatorio.', { campo: 'email' });
     }
     if (typeof cuerpo.contrasena !== 'string' || cuerpo.contrasena.trim() === '') {
       return errorValidacion('La contraseña es obligatoria.', { campo: 'contrasena' });
     }
 
-    // 3. Normalizar el acceso: el acceso no distingue mayúsculas, así que
-    //    " Admin " y "admin" son el mismo usuario. Los accesos se guardan en
-    //    minúsculas en la base.
+    // 3. Normalizar el email: no distingue mayúsculas, así que
+    //    " Admin@Mostrador.com " y "admin@mostrador.com" son el mismo usuario.
+    //    Los emails se guardan en minúsculas en la base.
     //    La contraseña NO se toca: ahí sí importan mayúsculas y espacios.
-    const acceso = cuerpo.acceso.trim().toLowerCase();
+    const email = cuerpo.email.trim().toLowerCase();
 
     // 4. Buscar al usuario. Esta es la ÚNICA consulta del sistema que trae
     //    el hash de la contraseña, porque hay que compararlo. El hash se
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     const filas = await db
       .select()
       .from(usuarios)
-      .where(eq(usuarios.acceso, acceso));
+      .where(eq(usuarios.email, email));
     const usuario = filas[0];
 
     // Comparamos la contraseña SIEMPRE, exista o no el usuario.
@@ -107,8 +107,8 @@ export async function POST(request: Request) {
     return Response.json({
       id: usuario.id,
       nombre: usuario.nombre,
-      acceso: usuario.acceso,
-      perfil: usuario.perfil,
+      email: usuario.email,
+      rol: usuario.rol,
     });
   } catch (error) {
     return errorInterno(error);
@@ -126,8 +126,8 @@ export async function GET() {
     return Response.json({
       id: usuario.id,
       nombre: usuario.nombre,
-      acceso: usuario.acceso,
-      perfil: usuario.perfil,
+      email: usuario.email,
+      rol: usuario.rol,
     });
   } catch (error) {
     return errorInterno(error);

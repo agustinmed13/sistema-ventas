@@ -10,7 +10,7 @@ export default function PaginaLogin() {
   const router = useRouter();
 
   // Estado del formulario. Cada vez que cambia, React vuelve a dibujar.
-  const [acceso, setAcceso] = useState('');
+  const [email, setEmail] = useState('');
   const [contrasena, setContrasena] = useState('');
   const [error, setError] = useState(''); // mensaje a mostrar ('' = ninguno)
   const [cargando, setCargando] = useState(false); // true mientras espera al servidor
@@ -29,7 +29,7 @@ export default function PaginaLogin() {
       const respuesta = await fetch('/api/sesion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acceso, contrasena }),
+        body: JSON.stringify({ email, contrasena }),
       });
 
       // respuesta.ok es true para los códigos 200-299.
@@ -72,16 +72,16 @@ export default function PaginaLogin() {
         )}
 
         <div className="space-y-1">
-          <label htmlFor="acceso" className="block text-sm font-medium">
-            Acceso
+          <label htmlFor="email" className="block text-sm font-medium">
+            Email
           </label>
           <input
-            id="acceso"
-            type="text"
+            id="email"
+            type="email"
             autoComplete="username"
             autoCapitalize="none"
-            value={acceso}
-            onChange={(e) => setAcceso(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
             className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
