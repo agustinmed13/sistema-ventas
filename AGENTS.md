@@ -178,6 +178,173 @@ datos; `422` cuando está bien formado pero **rompe una regla de negocio**.
 
 ---
 
+## 5.1 Nombres de campo exactos — NO inventar
+
+La consigna da el JSON exacto de cada recurso. Los nombres de abajo son los
+que la API tiene que usar, tal cual. **Las columnas de la base pueden
+llamarse distinto**: el servicio traduce al devolver.
+
+Regla general: **los importes NO llevan sufijo `Centavos` en la API**. Van en
+centavos enteros igual, pero el campo se llama `precio`, `total`, `importe`,
+`subtotal`, `limiteCredito`.
+
+### Producto (sección 11.4)
+
+```json
+{
+  "id": 1,
+  "codigo": "HE-001",
+  "descripcion": "Martillo carpintero 500 g",
+  "categoria": { "id": 1, "nombre": "Herramientas" },
+  "precio": 1250000,
+  "existencia": 24,
+  "stockMinimo": 5,
+  "bajoMinimo": false,
+  "activo": true
+}
+```
+
+`POST /api/productos` recibe `codigo`, `descripcion`, `categoriaId`, `precio`,
+`stockMinimo` y `stockInicial` opcional. **`existencia` nunca se acepta** en
+`POST` ni en `PATCH`: si llega, `422`.
+
+`GET /api/productos` filtra por `q`, `categoriaId`, `bajoMinimo=true` y
+`activo` (por defecto `true`; el admin puede pedir `todos`).
+
+### Movimiento de stock (sección 11.4)
+
+```json
+{
+  "id": 812,
+  "producto": { "id": 1, "codigo": "HE-001" },
+  "tipo": "egreso",
+  "cantidad": -2,
+  "existenciaResultante": 22,
+  "motivo": "Rotura",
+  "referencia": null,
+  "usuario": { "id": 1, "nombre": "Laura Méndez" },
+  "fecha": "2026-10-29T18:40:00Z"
+}
+```
+
+`POST /api/productos/{id}/movimientos` recibe `{ tipo, cantidad, motivo,
+observacion }`. La cantidad llega **positiva** y el signo lo pone el servidor.
+Motivos de ingreso: *Reposición*, *Stock inicial*, *Devolución de cliente*.
+De egreso: *Rotura*, *Vencimiento*, *Ajuste de inventario*, *Uso interno*.
+En ventas y anulaciones, `referencia` trae
+`{ "facturaId": 1233, "numero": "0001-00001233" }`.
+
+### Cliente (sección 11.5)
+
+```json
+{
+  "id": 1,
+  "tipoDoc": "DNI",
+  "nroDoc": "28.456.123",
+  "nombre": "Mariana López",
+  "domicilio": "Las Heras 455",
+  "telefono": "381 455-2210",
+  "email": "mariana.lopez@correo.test",
+  "cuentaCorriente": true,
+  "limiteCredito": 40000000,
+  "saldo": 1440000,
+  "disponible": 38560000,
+  "activo": true
+}
+```
+
+`limiteCredito` y `disponible` valen `null` si el cliente no tiene límite.
+`disponible` = `limiteCredito` − `saldo`.
+`GET /api/clientes/{id}` agrega `ultimasFacturas` con las 6 últimas.
+`GET /api/clientes` acepta `conDeuda=true` (agrega `totalAdeudado`) y
+`orden=saldo` o `nombre`.
+
+### Pago (sección 11.5)
+
+`POST /api/clientes/{id}/pagos` recibe `{ importe, medio, observacion }`.
+`medio`: `efectivo`, `transferencia` o **`tarjeta_debito`**.
+
+```json
+{
+  "id": 341,
+  "numeroRecibo": "R 0001-00000341",
+  "fecha": "2026-10-29T18:50:00Z",
+  "cliente": { "id": 1, "nombre": "Mariana López" },
+  "importe": 500000,
+  "medio": "transferencia",
+  "usuario": { "id": 2, "nombre": "Pablo Ruiz" },
+  "saldoCliente": 940000
+}
+```
+
+`numeroRecibo` es **texto** con formato `R 0001-00000341`.
+
+### Cuenta corriente (sección 11.5)
+
+`GET /api/clientes/{id}/cuenta` devuelve `{ cliente, saldoAnterior,
+movimientos, saldo }`, con el **saldo acumulado en cada renglón**:
+
+```json
+{ "fecha": "...", "tipo": "debito", "importe": 960000,
+  "descripcion": "Factura 0001-00001223", "facturaId": 1223,
+  "pagoId": null, "saldo": 960000 }
+```
+
+### Factura (sección 11.6)
+
+**El cuerpo del POST:**
+
+```json
+{
+  "clienteId": 1,
+  "items": [{ "productoId": 4, "cantidad": 1 }],
+  "pago": { "forma": "cuenta_corriente" }
+}
+```
+
+`pago.forma`: `contado`, `tarjeta` o `cuenta_corriente`.
+En contado, `pago.montoRecibido` es **opcional**: si falta, se toma el total.
+En tarjeta, `pago.tarjeta` con `tipo`, `marca` y `ultimos4`.
+
+**La respuesta:**
+
+```json
+{
+  "id": 1233,
+  "puntoVenta": 1,
+  "numero": 1233,
+  "numeroFormateado": "0001-00001233",
+  "fecha": "2026-10-29T18:24:00Z",
+  "estado": "emitida",
+  "cliente": { "id": 1, "nombre": "...", "tipoDoc": "DNI", "nroDoc": "...", "domicilio": "..." },
+  "vendedor": { "id": 1, "nombre": "Laura Méndez" },
+  "items": [
+    { "productoId": 4, "codigo": "EL-001", "descripcion": "...",
+      "cantidad": 1, "precioUnitario": 190000, "subtotal": 190000 }
+  ],
+  "total": 1440000,
+  "pago": { "forma": "cuenta_corriente" },
+  "saldoCliente": 1440000
+}
+```
+
+`numero` es **entero**; el texto va en `numeroFormateado`.
+Se llama `vendedor`, no `usuario`. `saldoCliente` solo en ventas a cuenta.
+Si está anulada, agrega `anulacion` con fecha, usuario y motivo.
+
+`GET /api/facturas` filtra por `q` (número o nombre del cliente), `desde`,
+`hasta`, `clienteId`, `vendedorId`, **`forma`** (no `formaPago`) y `estado`.
+Agrega `totalEmitido` junto a la paginación.
+
+### Detalles de los errores
+
+- `STOCK_INSUFICIENTE`: `details` lista **todos** los productos que fallan,
+  cada uno con `productoId`, `solicitado` y `disponible`.
+- `LIMITE_CREDITO_EXCEDIDO`: `details` trae `saldoActual`, `limite` y
+  `excedente`.
+
+---
+
 ## 6. Estructura de carpetas (sección 11.9)
 
 ```
