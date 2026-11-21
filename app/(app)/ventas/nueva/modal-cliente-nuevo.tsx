@@ -21,11 +21,11 @@ import { pesosACentavos } from './pesos';
 export type ClienteElegido = {
   id: number;
   nombre: string;
-  tipoDocumento: 'DNI' | 'CUIT';
-  numeroDocumento: string;
-  cuentaCorrienteHabilitada: boolean;
-  limiteCreditoCentavos: number | null;
-  saldoCentavos: number;
+  tipoDoc: 'DNI' | 'CUIT';
+  nroDoc: string;
+  cuentaCorriente: boolean;
+  limiteCredito: number | null;
+  saldo: number;
 };
 
 type Props = {
@@ -41,8 +41,8 @@ export default function ModalClienteNuevo({ abierto, onCerrar, onCreado }: Props
   const refDialogo = useRef<HTMLDialogElement>(null);
 
   // Los campos del formulario: estado PROPIO del modal
-  const [tipoDocumento, setTipoDocumento] = useState<'DNI' | 'CUIT'>('DNI');
-  const [numeroDocumento, setNumeroDocumento] = useState('');
+  const [tipoDoc, setTipoDoc] = useState<'DNI' | 'CUIT'>('DNI');
+  const [nroDoc, setNroDoc] = useState('');
   const [nombre, setNombre] = useState('');
   const [domicilio, setDomicilio] = useState('');
   const [telefono, setTelefono] = useState('');
@@ -67,8 +67,8 @@ export default function ModalClienteNuevo({ abierto, onCerrar, onCreado }: Props
   }, [abierto]);
 
   function limpiar() {
-    setTipoDocumento('DNI');
-    setNumeroDocumento('');
+    setTipoDoc('DNI');
+    setNroDoc('');
     setNombre('');
     setDomicilio('');
     setTelefono('');
@@ -94,15 +94,15 @@ export default function ModalClienteNuevo({ abierto, onCerrar, onCreado }: Props
 
     // Solo mandamos los campos que tienen algo escrito
     const datos: { [campo: string]: string | number | boolean } = {
-      tipoDocumento,
-      numeroDocumento: numeroDocumento.trim(),
+      tipoDoc,
+      nroDoc: nroDoc.trim(),
       nombre: nombre.trim(),
-      cuentaCorrienteHabilitada: cuentaCorriente,
+      cuentaCorriente: cuentaCorriente,
     };
     if (domicilio.trim() !== '') datos.domicilio = domicilio.trim();
     if (telefono.trim() !== '') datos.telefono = telefono.trim();
     if (email.trim() !== '') datos.email = email.trim();
-    if (cuentaCorriente && limiteCentavos !== null) datos.limiteCreditoCentavos = limiteCentavos;
+    if (cuentaCorriente && limiteCentavos !== null) datos.limiteCredito = limiteCentavos;
 
     try {
       const respuesta = await fetch('/api/clientes', {
@@ -118,11 +118,11 @@ export default function ModalClienteNuevo({ abierto, onCerrar, onCreado }: Props
         onCreado({
           id: creado.id,
           nombre: creado.nombre,
-          tipoDocumento: creado.tipoDocumento,
-          numeroDocumento: creado.numeroDocumento,
-          cuentaCorrienteHabilitada: creado.cuentaCorrienteHabilitada,
-          limiteCreditoCentavos: creado.limiteCreditoCentavos ?? null,
-          saldoCentavos: creado.saldoCentavos ?? 0,
+          tipoDoc: creado.tipoDoc,
+          nroDoc: creado.nroDoc,
+          cuentaCorriente: creado.cuentaCorriente,
+          limiteCredito: creado.limiteCredito ?? null,
+          saldo: creado.saldo ?? 0,
         });
         limpiar();
         setGuardando(false);
@@ -150,7 +150,7 @@ export default function ModalClienteNuevo({ abierto, onCerrar, onCreado }: Props
     onCerrar();
   }
 
-  const puedeGuardar = nombre.trim() !== '' && numeroDocumento.trim() !== '' && !limiteInvalido && !guardando;
+  const puedeGuardar = nombre.trim() !== '' && nroDoc.trim() !== '' && !limiteInvalido && !guardando;
 
   return (
     // onClose: se dispara también cuando el usuario aprieta Esc
@@ -186,8 +186,8 @@ export default function ModalClienteNuevo({ abierto, onCerrar, onCreado }: Props
             </label>
             <select
               id="cn-tipo"
-              value={tipoDocumento}
-              onChange={(e) => setTipoDocumento(e.target.value === 'CUIT' ? 'CUIT' : 'DNI')}
+              value={tipoDoc}
+              onChange={(e) => setTipoDoc(e.target.value === 'CUIT' ? 'CUIT' : 'DNI')}
               className={claseCampo}
             >
               <option value="DNI">DNI</option>
@@ -200,9 +200,9 @@ export default function ModalClienteNuevo({ abierto, onCerrar, onCreado }: Props
             </label>
             <input
               id="cn-numero"
-              value={numeroDocumento}
+              value={nroDoc}
               // Solo dígitos: se borra cualquier otra cosa al escribir
-              onChange={(e) => setNumeroDocumento(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => setNroDoc(e.target.value.replace(/\D/g, ''))}
               inputMode="numeric"
               maxLength={11}
               required

@@ -106,11 +106,11 @@ export default function NuevaVentaPage() {
   const recibidoCentavos = pesosACentavos(recibidoTexto);
 
   // Cuenta corriente: solo con cliente registrado Y habilitado (regla 6)
-  const puedeCuentaCorriente = cliente !== null && cliente.cuentaCorrienteHabilitada;
+  const puedeCuentaCorriente = cliente !== null && cliente.cuentaCorriente;
   let motivoSinCuentaCorriente = '';
   if (cliente === null) {
     motivoSinCuentaCorriente = 'Consumidor final no puede comprar en cuenta corriente.';
-  } else if (!cliente.cuentaCorrienteHabilitada) {
+  } else if (!cliente.cuentaCorriente) {
     motivoSinCuentaCorriente = 'Este cliente no tiene cuenta corriente habilitada.';
   }
 
@@ -121,16 +121,13 @@ export default function NuevaVentaPage() {
   const superaLimite =
     formaPago === 'cuenta_corriente' &&
     cliente !== null &&
-    cliente.limiteCreditoCentavos !== null &&
-    cliente.saldoCentavos + totalCentavos > cliente.limiteCreditoCentavos;
+    cliente.limiteCredito !== null &&
+    cliente.saldo + totalCentavos > cliente.limiteCredito;
 
   // ¿El pago está completo, según la forma elegida?
   let pagoValido = false;
   if (formaPago === 'contado') {
-    // El monto recibido es OPCIONAL (consigna 11.6): vacío = paga justo
-    // el total. Si escribió algo, tiene que ser válido y alcanzar.
-    const recibidoVacio = recibidoTexto.trim() === '';
-    pagoValido = recibidoVacio || (recibidoCentavos !== null && recibidoCentavos >= totalCentavos);
+    pagoValido = recibidoCentavos !== null && recibidoCentavos >= totalCentavos;
   } else if (formaPago === 'tarjeta') {
     pagoValido = tarjetaMarca.trim() !== '' && /^\d{4}$/.test(tarjetaUltimos4);
   } else {
@@ -237,7 +234,7 @@ export default function NuevaVentaPage() {
     setResultadosClientes([]);
     // Si estaba en cuenta corriente y este cliente no la tiene, volvemos
     // a contado para no dejar una opción que no se puede usar (regla 6)
-    if (formaPago === 'cuenta_corriente' && !elegido.cuentaCorrienteHabilitada) {
+    if (formaPago === 'cuenta_corriente' && !elegido.cuentaCorriente) {
       setFormaPago('contado');
     }
     refBuscador.current?.focus(); // seguimos con los productos
@@ -376,33 +373,34 @@ export default function NuevaVentaPage() {
     setEnviando(true);
     setError('');
 
-    // El cuerpo tiene el formato de la consigna 11.6 (AGENTS.md 5.1):
-    //   { clienteId, items, pago: { forma, ... } }
-    // Lo que va dentro de "pago" depende de la forma. Los campos que no
+    // El cuerpo cambia según la forma de pago. Los campos que no
     // corresponden NO se mandan. Nunca precios ni totales: los calcula
-    // el servidor con los precios de la base. Importes en centavos.
+    // el servidor con los precios de la base.
     const items = renglones.map((r) => ({ productoId: r.productoId, cantidad: r.cantidad }));
     const clienteId = cliente ? cliente.id : null; // null = consumidor final
 
-    let pago;
+    // La forma de pago va ANIDADA dentro de "pago" (consigna, seccion 11.6).
+    // El importe se llama montoRecibido, sin el sufijo Centavos: va en
+    // centavos enteros igual, pero el campo de la API no lleva ese nombre.
+    let cuerpoPedido;
     if (formaPago === 'contado') {
-      // montoRecibido es opcional: si el campo quedó vacío no se manda,
-      // y el servidor toma el total (pagó justo, sin vuelto)
-      if (recibidoCentavos !== null) {
-        pago = { forma: 'contado', montoRecibido: recibidoCentavos };
-      } else {
-        pago = { forma: 'contado' };
-      }
+      cuerpoPedido = {
+        clienteId,
+        items,
+        pago: { forma: 'contado', montoRecibido: recibidoCentavos },
+      };
     } else if (formaPago === 'tarjeta') {
-      pago = {
-        forma: 'tarjeta',
-        tarjeta: { tipo: tarjetaTipo, marca: tarjetaMarca.trim(), ultimos4: tarjetaUltimos4 },
+      cuerpoPedido = {
+        clienteId,
+        items,
+        pago: {
+          forma: 'tarjeta',
+          tarjeta: { tipo: tarjetaTipo, marca: tarjetaMarca.trim(), ultimos4: tarjetaUltimos4 },
+        },
       };
     } else {
-      pago = { forma: 'cuenta_corriente' };
+      cuerpoPedido = { clienteId, items, pago: { forma: 'cuenta_corriente' } };
     }
-
-    const cuerpoPedido = { clienteId, items, pago };
 
     try {
       const respuesta = await fetch('/api/facturas', {
@@ -481,7 +479,7 @@ export default function NuevaVentaPage() {
                       >
                         <span className="font-medium">{c.nombre}</span>
                         <span className="text-muted-foreground">
-                          {formatearDocumento(c.tipoDocumento, c.numeroDocumento)}
+                          {formatearDocumento(c.tipoDoc, c.nroDoc)}
                         </span>
                       </button>
                     </li>
@@ -501,11 +499,11 @@ export default function NuevaVentaPage() {
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="text-sm">
               <p className="text-base font-medium">{cliente.nombre}</p>
-              <p className="text-muted-foreground">{formatearDocumento(cliente.tipoDocumento, cliente.numeroDocumento)}</p>
-              {cliente.cuentaCorrienteHabilitada ? (
+              <p className="text-muted-foreground">{formatearDocumento(cliente.tipoDoc, cliente.nroDoc)}</p>
+              {cliente.cuentaCorriente ? (
                 <p className="text-muted-foreground">
-                  Saldo: {formatearImporte(cliente.saldoCentavos)} · Límite:{' '}
-                  {cliente.limiteCreditoCentavos !== null ? formatearImporte(cliente.limiteCreditoCentavos) : 'sin límite'}
+                  Saldo: {formatearImporte(cliente.saldo)} · Límite:{' '}
+                  {cliente.limiteCredito !== null ? formatearImporte(cliente.limiteCredito) : 'sin límite'}
                 </p>
               ) : (
                 <p className="text-muted-foreground">Sin cuenta corriente</p>
@@ -682,7 +680,7 @@ export default function NuevaVentaPage() {
           <div className="space-y-2">
             <div className="space-y-1">
               <label htmlFor="recibido" className="block text-sm font-medium">
-                Monto recibido (en pesos, opcional)
+                Monto recibido (en pesos)
               </label>
               <input
                 id="recibido"
@@ -697,10 +695,7 @@ export default function NuevaVentaPage() {
               />
             </div>
 
-            {/* Mensajes del pago */}
-            {recibidoTexto.trim() === '' && renglones.length > 0 && (
-              <p className="text-sm text-muted-foreground">Si lo dejás vacío, se cobra el total justo (sin vuelto).</p>
-            )}
+            {/* Mensajes del pago: solo si escribió algo */}
             {recibidoTexto.trim() !== '' && recibidoCentavos === null && (
               <p className="text-sm text-destructive">El monto no es válido. Usá números, con coma para los centavos.</p>
             )}
@@ -790,10 +785,10 @@ export default function NuevaVentaPage() {
             </p>
             {/* Aviso adelantado del límite (regla 7). El servidor lo vuelve
                 a verificar al confirmar: esto no reemplaza ese control. */}
-            {superaLimite && cliente.limiteCreditoCentavos !== null && (
+            {superaLimite && cliente.limiteCredito !== null && (
               <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
-                Esta venta supera el límite de crédito. Saldo actual: {formatearImporte(cliente.saldoCentavos)} · Esta venta:{' '}
-                {formatearImporte(totalCentavos)} · Límite: {formatearImporte(cliente.limiteCreditoCentavos)}.
+                Esta venta supera el límite de crédito. Saldo actual: {formatearImporte(cliente.saldo)} · Esta venta:{' '}
+                {formatearImporte(totalCentavos)} · Límite: {formatearImporte(cliente.limiteCredito)}.
               </p>
             )}
           </div>
