@@ -47,7 +47,7 @@ export function errorNoEncontrado(mensaje = 'El recurso no existe.', detalles = 
 // Acá el código SÍ se pasa siempre, porque hay varios conflictos distintos y
 // el cliente necesita saber cuál fue. Ejemplo:
 //   return errorConflicto('STOCK_INSUFICIENTE', 'No hay stock suficiente.', { productoId: 1, disponible: 3, solicitado: 5 });
-export function errorConflicto(codigo, mensaje, detalles = {}) {
+export function errorConflicto(codigo: string, mensaje: string, detalles = {}) {
   return Response.json(
     { error: { codigo, mensaje, detalles } },
     { status: 409 }
@@ -57,7 +57,7 @@ export function errorConflicto(codigo, mensaje, detalles = {}) {
 // 422 — El JSON está bien armado, pero los datos no cumplen una regla.
 // En "detalles" conviene indicar qué campo falló. Ejemplo:
 //   return errorValidacion('El precio debe ser mayor a cero.', { campo: 'precioCentavos' });
-export function errorValidacion(mensaje, detalles = {}) {
+export function errorValidacion(mensaje: string, detalles = {}) {
   return Response.json(
     { error: { codigo: 'VALIDACION', mensaje, detalles } },
     { status: 422 }
@@ -67,7 +67,8 @@ export function errorValidacion(mensaje, detalles = {}) {
 // 500 — Error inesperado. Nunca se manda el detalle interno al cliente
 // (podría mostrar partes del código o de la base). Se registra en la consola
 // del servidor y al cliente le llega un mensaje genérico.
-export function errorInterno(errorOriginal) {
+// "unknown" porque en un catch puede llegar cualquier cosa.
+export function errorInterno(errorOriginal: unknown) {
   console.error(errorOriginal);
   return Response.json(
     { error: { codigo: 'ERROR_INTERNO', mensaje: 'Ocurrió un error inesperado.', detalles: {} } },

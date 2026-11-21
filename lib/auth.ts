@@ -14,8 +14,8 @@ import { randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
-import { db } from '@/db/index.js';
-import { usuarios, sesiones } from '@/db/schema.js';
+import { db } from '@/db/index';
+import { usuarios, sesiones } from '@/db/schema';
 
 const NOMBRE_COOKIE = 'sesion';
 
@@ -26,7 +26,7 @@ const DURACION_SESION_MS = 7 * 24 * 60 * 60 * 1000;
 // Compara la contraseña que escribió el usuario con el hash guardado.
 // Devuelve true o false.
 // ─────────────────────────────────────────────────────────────
-export async function verificarContrasena(plano, hash) {
+export async function verificarContrasena(plano: string, hash: string) {
   // bcrypt no "desencripta" el hash (no se puede). Lo que hace es aplicar
   // el mismo cálculo a la contraseña escrita y ver si da el mismo resultado.
   return await bcrypt.compare(plano, hash);
@@ -37,7 +37,7 @@ export async function verificarContrasena(plano, hash) {
 // Solo se puede llamar desde una ruta de la API (Route Handler), porque
 // es el único lugar donde Next.js deja escribir cookies.
 // ─────────────────────────────────────────────────────────────
-export async function crearSesion(usuarioId) {
+export async function crearSesion(usuarioId: number) {
   // 32 bytes al azar, escritos como texto hexadecimal (64 caracteres).
   // Es imposible de adivinar, y por eso alcanza como "llave" de la sesión.
   const token = randomBytes(32).toString('hex');

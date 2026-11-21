@@ -7,20 +7,20 @@
 // (POST, GET, DELETE...) atiende los pedidos de ese método a esta URL.
 
 import { eq } from 'drizzle-orm';
-import { db } from '@/db/index.js';
-import { usuarios } from '@/db/schema.js';
+import { db } from '@/db/index';
+import { usuarios } from '@/db/schema';
 import {
   verificarContrasena,
   crearSesion,
   obtenerUsuarioActual,
   cerrarSesion,
-} from '@/lib/auth.js';
+} from '@/lib/auth';
 import {
   errorSolicitudInvalida,
   errorNoAutorizado,
   errorValidacion,
   errorInterno,
-} from '@/lib/errores.js';
+} from '@/lib/errores';
 
 // El mismo mensaje para los tres casos de fallo del login (ver POST).
 const MENSAJE_CREDENCIALES = 'Usuario o contraseña incorrectos.';
@@ -34,7 +34,7 @@ const HASH_DE_RELLENO = '$2b$10$yywJMjD0N8yEv9bwnydC.uzBRh/1Tp3ch6DMjgFrg.EJOiZf
 // POST /api/sesion — iniciar sesión
 // Recibe: { "acceso": "admin", "contrasena": "..." }
 // ─────────────────────────────────────────────────────────────
-export async function POST(request) {
+export async function POST(request: Request) {
   try {
     // 1. Leer el cuerpo. request.json() tira un error si el texto no es
     //    JSON válido; lo atrapamos para devolver 400 y no 500.

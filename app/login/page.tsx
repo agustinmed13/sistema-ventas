@@ -3,7 +3,7 @@
 // Hace falta porque usa estado (useState) y reacciona a lo que escribe el
 // usuario. Los componentes de servidor no pueden hacer eso.
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function PaginaLogin() {
@@ -15,7 +15,7 @@ export default function PaginaLogin() {
   const [error, setError] = useState(''); // mensaje a mostrar ('' = ninguno)
   const [cargando, setCargando] = useState(false); // true mientras espera al servidor
 
-  async function enviar(evento) {
+  async function enviar(evento: FormEvent<HTMLFormElement>) {
     // Por defecto, un <form> recarga la página al enviarse. Lo evitamos:
     // el envío lo hacemos nosotros con fetch.
     evento.preventDefault();

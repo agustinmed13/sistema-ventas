@@ -7,172 +7,185 @@ Repositorio: `github.com/agustinmed13/sistema-ventas`
 
 ---
 
-## 1. Qué es este proyecto
+## 0. La consigna oficial
 
-Segundo parcial de Programación IV (TUP26, UTN FRT, Ing. Alejandro Di Battista).
+La consigna es **`requerimientos.md`**, en la raíz del repositorio de la
+cátedra: `github.com/AlejandroDiBattista/tup26-p4`. Está fechada el 29 de
+octubre de 2026 y reúne el enunciado, las pautas de arquitectura, la API REST y
+los entregables.
 
-Sistema web de gestión comercial: ventas, catálogo de productos, control de stock
-y cuentas corrientes de clientes.
+> **Atención:** existe otro archivo, `parcial/segundo-parcial.md`, que describe
+> un alcance más chico. **No es la consigna.** Ante cualquier diferencia manda
+> `requerimientos.md`.
 
-- **Grupo de 3 personas**, cada una trabajando con su propio agente de IA.
-- **Fecha de defensa: jueves 26 de noviembre de 2026.**
-- La defensa es **individual**: cada integrante responde preguntas sobre
-  *cualquier* parte del sistema, muestra en el código dónde está lo que se le
-  pregunta, y hace un cambio pequeño pedido en el momento.
-- **El grupo se coordina solo por texto.** No hay llamadas ni reuniones
-  presenciales. Esto condiciona todo lo demás (ver sección 3).
+Cada requerimiento tiene un código (`RF-V1`, `RF-P3`, etc.) para citarlo en el
+README y en la corrección. Usalos.
 
-### Qué significa eso para el agente
+- **Entrega:** lunes 23 de noviembre de 2026
+- **Defensa:** jueves 26 de noviembre de 2026
+- **Grupo de 3**, cada integrante con su propio agente de IA
+
+---
+
+## 1. Qué significa esto para el agente
+
+La defensa es **individual** y sobre **todo el sistema**. Cada integrante
+responde preguntas sobre cualquier parte del código, muestra dónde está lo que
+se le pregunta, y hace **un cambio pequeño pedido en el momento**.
 
 El objetivo no es código que funcione: es código que un estudiante de nivel
-básico-intermedio pueda **leer, explicar y modificar bajo presión**, incluso si no
-lo escribió.
+básico-intermedio pueda **leer, explicar y modificar bajo presión**, incluso si
+no lo escribió.
 
 - Preferir siempre la solución **simple y explícita** sobre la elegante.
 - No usar patrones, abstracciones ni librerías que no sean necesarias.
-- Si hay dos formas de hacer algo, elegir la que sea más fácil de explicar.
-- Código repetido y claro es mejor que código abstracto y corto.
+- Si hay dos formas de hacer algo, elegir la más fácil de explicar.
+- Código repetido y claro es mejor que abstracto y corto.
 - Comentar en español las partes no obvias, sobre todo las reglas de negocio.
-- **Menos código es mejor.** Cada línea de más es una línea que otra persona
-  tiene que entender leyendo, sin poder preguntar en el momento.
 
 ---
 
-## 2. Stack — fijo, no cambiar
+## 2. Stack — obligatorio, no cambiar
 
-| Capa | Herramienta |
-|---|---|
-| Framework | Next.js 16 (App Router) |
-| Lenguaje | **JavaScript** (no TypeScript) |
-| API | Route Handlers en `app/api/...` — **API REST, no Server Actions** |
-| Base de datos | SQLite local en desarrollo, Turso en producción |
-| ORM | Drizzle |
-| Estilos | Tailwind CSS — ya instalado por el generador, no reinstalar |
-| Publicación | Vercel |
+| Capa | Tecnología | Carácter |
+|---|---|---|
+| Lenguaje | **TypeScript** | Obligatorio |
+| Framework | Next.js 16, App Router | Obligatorio |
+| API | REST con Route Handlers (`route.ts`) | Obligatorio |
+| Estilos | Tailwind CSS | Obligatorio |
+| Componentes | **shadcn/ui** | Obligatorio |
+| Gráficos | **Chart.js** con `react-chartjs-2` | Obligatorio |
+| Base de datos | Turso (libSQL) | Obligatorio |
+| Acceso a datos | Drizzle ORM + migraciones de `drizzle-kit` | Obligatorio |
+| Hosting | Vercel | Obligatorio |
 
-**No usar NextAuth ni ninguna librería de autenticación.** La sesión se
-implementa a mano (tabla `sesiones` + cookie `HttpOnly`) porque el grupo tiene
-que poder explicar línea por línea dónde se verifica la sesión.
+**Autenticación:** sesión propia con tabla `sesiones` + cookie `HttpOnly`. Ya
+está implementada. La consigna la acepta explícitamente como alternativa a
+Auth.js. **No instalar NextAuth.**
 
-**No usar Server Actions para las operaciones de negocio.** El profesor pregunta
-textualmente "¿dónde se expone la API REST para agregar un producto?". Tiene que
-haber rutas REST reales.
-
-El proyecto se creó con `create-next-app` 16.4.6. Si algo de la documentación de
-Next.js 15 no coincide, mandan la versión 16 y el código que ya está en el repo.
+**No usar Server Actions para las operaciones de negocio.** Todo pasa por la
+API REST: la consigna lo exige y en la defensa preguntan por las rutas.
 
 ---
 
-## 3. Cómo trabaja este grupo (solo texto)
+## 3. Reglas de trabajo
 
-No hay llamadas. Todo el entendimiento se transfiere por escrito. Tres reglas
-obligatorias:
-
-### 3.1 Cada parte compartida se documenta
-
-Quien escribe la base de datos, el login o las ventas deja además un archivo
-corto en `docs/` explicándolo: qué hace, dónde está, y por qué se hizo así.
-Pensado para alguien que lo lee sin poder preguntar nada.
-
-- `docs/base-de-datos.md`
-- `docs/autenticacion.md`
-- `docs/ventas.md`
-- `docs/defensa.md` ← el mapa de preguntas (ver 3.3)
-
-Cortos. Con ejemplos concretos. Si un diagrama lo explica mejor que tres
-párrafos, va el diagrama.
-
-### 3.2 Pull requests con pregunta obligatoria
-
-Nadie mergea su propio código. Antes de aprobar, quien revisa escribe **una
-pregunta** sobre lo que leyó, y quien lo escribió la responde en el PR.
-
-Queda por escrito y obliga a leer. Es el reemplazo directo de la revisión cara a
-cara.
-
-### 3.3 El mapa de defensa
-
-`docs/defensa.md` lista las preguntas del README del profesor y, al lado de cada
-una, **el archivo y la línea donde está la respuesta**. Lo completa quien escribió
-cada parte, a medida que la escribe — no al final.
+1. **No instalar dependencias** sin que la persona lo apruebe explícitamente.
+2. **No tocar archivos fuera del módulo asignado** (ver sección 8).
+3. **No refactorizar de más.** Si se pide arreglar un formulario, arreglar ese
+   formulario.
+4. **Trabajar por etapas.** Entregar una pieza funcionando, explicarla, y
+   recién después seguir.
+5. **Explicar siempre:** qué archivo se tocó, qué hace cada bloque importante,
+   por qué se eligió esa forma.
+6. **No asumir que algo funciona.** Dar el comando exacto y esperar que la
+   persona reporte el resultado.
+7. **Anotar los errores propios** en `NOTAS-IA.md` (fecha, qué salió mal, cómo
+   se corrigió). El profesor lo pregunta en la defensa.
 
 ---
 
-## 4. Estructura de carpetas
+## 4. Estructura
 
 ```
 app/
-  login/                 Pantalla de acceso
-  (app)/                 Pantallas con menú lateral
+  login/                 Única página pública
+  (app)/
+    layout.tsx           Panel lateral + barra superior + protección
+    page.tsx             Tablero de inicio
     ventas/
     productos/
     clientes/
+    usuarios/
+    perfil/
   api/
     sesion/
     usuarios/
+    categorias/
     productos/
     movimientos-stock/
     clientes/
-    ventas/
+    facturas/
 db/
-  schema.js              Definición de las tablas (Drizzle)
-  index.js               Conexión a la base
-  seed.js                Datos de prueba y primer administrador
+  schema.ts              Las tablas
+  index.ts               Conexión (único lugar)
+  seed.ts                Datos de prueba
 lib/
-  auth.js                Sesión, hash de contraseñas, permisos
-  formato.js             Importes y fechas
-  errores.js             Construcción de respuestas de error
+  auth.ts                Sesión, contraseñas, permisos
+  errores.ts             Respuestas de error
+  formato.ts             Importes y fechas
 components/              Componentes compartidos
-docs/                    Explicaciones para el grupo (ver sección 3)
+docs/                    Explicaciones para el grupo
 ```
 
 ---
 
-## 5. Convenciones de la API
+## 5. Modelo de datos
 
-**La referencia es `parcial/api-rest-sistema-ventas.md` del repositorio del
-profesor.** Ante cualquier duda, ese documento manda. Rutas acordadas:
+Según la sección 7 de la consigna. Todas las tablas llevan `id` y fecha de
+creación. Los importes van en **centavos enteros**.
 
+| Tabla | Guarda |
+|---|---|
+| `usuarios` | email (único), nombre, hash de contraseña, rol, activo |
+| `sesiones` | token, usuario, vencimiento |
+| `categorias` | nombre (único), activa |
+| `productos` | código (único), descripción, precio, existencia, stock mínimo, activo, categoría |
+| `movimientos_stock` | tipo, cantidad con signo, existencia resultante, motivo, fecha, producto, usuario, factura opcional |
+| `clientes` | tipo y número de documento (único), nombre, domicilio, teléfono, email, cuenta corriente habilitada, límite de crédito, activo |
+| `facturas` | punto de venta, número, fecha, total, forma de pago, datos de tarjeta, monto recibido, estado, motivo de anulación, cliente opcional, usuario |
+| `factura_items` | cantidad, precio unitario, subtotal, descripción (copiada), factura, producto |
+| `pagos` | número de recibo, fecha, importe, medio, observación, cliente, usuario |
+| `movimientos_cuenta` | tipo (débito/crédito), importe, fecha, descripción, cliente, factura o pago de origen |
+
+**Roles:** `admin` y `vendedor`. El vendedor opera el mostrador pero no toca
+configuración, stock ni anulaciones.
+
+---
+
+## 6. Reglas de negocio
+
+Se validan **en el servidor**. La interfaz puede adelantarlas, pero no las
+reemplaza.
+
+1. **La existencia nunca es negativa.** Se controla al cargar el ítem y otra
+   vez al confirmar.
+2. **Todo cambio de stock deja un movimiento**, en la misma transacción que
+   actualiza la existencia.
+3. **El precio se congela.** La factura guarda el precio del momento.
+4. **Numeración correlativa y sin huecos**, formato `0001-00000001`. Se asigna
+   al confirmar, no al empezar.
+5. **Una factura confirmada no se modifica.** Solo se anula, y la anulación
+   revierte stock y saldo.
+6. **Consumidor final no compra en cuenta corriente.**
+7. **Saldo = débitos − créditos.** Si el cliente tiene límite de crédito, una
+   venta a cuenta no puede superarlo.
+8. **Un pago no supera la deuda.** No hay saldos a favor.
+9. **De la tarjeta solo se guardan tipo, marca y últimos 4 dígitos.**
+10. **Importes en centavos enteros**, mostrados como `$ 12.345,50`.
+11. **Trazabilidad:** facturas, movimientos y pagos registran usuario y fecha.
+12. **Bajas lógicas.** Nunca se borra nada con historial.
+
+---
+
+## 7. Convenciones de la API
+
+Rutas bajo `/api`, con `route.ts`. Cada operación verifica **en el servidor**
+la sesión, los permisos y las reglas que correspondan.
+
+**Verificación al empezar cada ruta, explícita:**
+
+```ts
+const usuario = await obtenerUsuarioActual();
+if (!usuario) return errorNoAutorizado();
+if (usuario.rol !== 'admin') return errorProhibido();
 ```
-POST   /api/sesion                          iniciar sesión
-GET    /api/sesion                          usuario actual
-DELETE /api/sesion                          cerrar sesión
 
-GET    /api/usuarios?q=            (admin)
-POST   /api/usuarios               (admin)
-GET    /api/usuarios/:id           (admin)
-PATCH  /api/usuarios/:id           (admin)
+Nada de wrappers ni middleware. Tiene que poder señalarse el lugar exacto.
 
-GET    /api/productos?q=
-POST   /api/productos
-GET    /api/productos/:id
-PATCH  /api/productos/:id
+**Listados:** `{ datos: [...] }`
 
-GET    /api/movimientos-stock?productoId=
-POST   /api/movimientos-stock
-
-GET    /api/clientes?q=
-POST   /api/clientes
-GET    /api/clientes/:id
-PATCH  /api/clientes/:id
-
-GET    /api/ventas
-POST   /api/ventas
-GET    /api/ventas/:id
-
-GET    /api/clientes/:id/cuenta-corriente
-POST   /api/clientes/:id/pagos
-```
-
-### Formato de respuestas
-
-Listados:
-
-```json
-{ "datos": [ ... ] }
-```
-
-Errores:
+**Errores:**
 
 ```json
 {
@@ -184,8 +197,6 @@ Errores:
 }
 ```
 
-### Códigos HTTP
-
 | Código | Cuándo |
 |---|---|
 | `400` | JSON inválido o solicitud mal formada |
@@ -193,183 +204,107 @@ Errores:
 | `403` | Sin permiso para la operación |
 | `404` | El recurso no existe |
 | `409` | Conflicto: código duplicado, stock insuficiente, pago mayor al saldo |
-| `422` | Datos bien formados que violan una regla de validación |
+| `422` | Datos bien formados que violan una validación |
 | `500` | Error inesperado — nunca exponer detalles internos |
 
-Respuesta exitosa sin contenido: `204`, sin cuerpo.
+**El servidor asigna**, el cliente nunca envía: `id`, usuario, número de
+comprobante, número de recibo, fechas, existencia actualizada y totales
+calculados.
 
 ---
 
-## 6. Convenciones de datos
-
-- **Los importes se guardan en centavos enteros.** `650000` = $ 6.500,00. Los
-  campos terminan en `Centavos` (`precioCentavos`, `totalCentavos`,
-  `importeCentavos`). Nunca decimales: en JavaScript `0.1 + 0.2` no da `0.3`, y
-  esos errores se acumulan en los totales.
-- La interfaz muestra pesos; convierte a centavos antes de llamar la API.
-- Las cantidades son **enteros positivos**. El stock puede ser cero, nunca
-  negativo.
-- Fechas en **ISO 8601 con zona** (`2026-11-26T14:30:00Z`).
-- La búsqueda `q` no distingue mayúsculas ni acentos. `q` vacío devuelve todo.
-- El código de producto es único sin distinguir mayúsculas.
-- Nombres en **español**, `camelCase` en JavaScript, `snake_case` en las columnas
-  de la base.
-
-### Lo que el servidor asigna, no el cliente
-
-El cliente **nunca** envía: `id`, `usuarioId`, número de comprobante, fecha de
-ventas y movimientos, stock actualizado, ni totales calculados. Todo eso lo
-determina el servidor. Si el cliente manda un campo de solo lectura o
-desconocido: `422`.
-
----
-
-## 7. Tablas
-
-Nombres acordados. **Los campos se definen en conjunto — ningún agente los define
-por su cuenta.**
-
-| Tabla | Qué guarda |
-|---|---|
-| `usuarios` | nombre, acceso, hash de contraseña, perfil, activo |
-| `sesiones` | token, usuarioId, expiración |
-| `productos` | código, nombre, precioCentavos, stock, activo |
-| `clientes` | nombre o razón social, documento, contacto |
-| `ventas` | número, fecha, clienteId, totalCentavos, formaPago, usuarioId |
-| `venta_detalles` | ventaId, productoId, descripción, cantidad, precio, subtotal |
-| `movimientos_stock` | productoId, tipo, cantidad, motivo, origen, fecha |
-| `pagos` | clienteId, fecha, importeCentavos, observación |
-
-### Dos reglas de modelado que se van a preguntar en la defensa
-
-- **`venta_detalles` guarda copia de la descripción y el precio**, no solo el
-  `productoId`. Si mañana cambia el precio o el nombre del producto, el
-  comprobante viejo tiene que seguir mostrando los datos del momento de la venta.
-- **El saldo del cliente se calcula** (ventas en cuenta corriente − pagos), no se
-  guarda en una columna. El stock del producto sí se guarda, y se actualiza
-  dentro de la misma transacción que el movimiento.
-
----
-
-## 8. Archivos compartidos — no tocar sin avisar al grupo
+## 8. Archivos compartidos — no tocar sin avisar
 
 ```
-db/schema.js
-db/index.js
-db/seed.js
-lib/auth.js
-lib/formato.js
-lib/errores.js
-app/(app)/layout.js
+db/schema.ts
+db/index.ts
+db/seed.ts
+lib/auth.ts
+lib/errores.ts
+lib/formato.ts
+app/(app)/layout.tsx
 components/
 package.json
 ```
 
-Si un cambio necesita tocar uno de estos, el agente lo plantea y la persona lo
-coordina por WhatsApp antes de hacerlo. Es la causa más común de que tres
-personas se pisen el trabajo.
-
 ---
 
-## 9. Plan y reparto
+## 9. Reparto
 
-| Día | Qué | Quién |
-|---|---|---|
-| Vie 20 | Proyecto, repo, Turso, deploy vacío en Vercel | Agustín |
-| Sáb 21 | Base de datos + datos de prueba + `docs/base-de-datos.md` | Agustín |
-| Dom 22 | Login, sesión, permisos, layout + `docs/autenticacion.md` | Agustín |
-| Lun 23 | Módulos repartidos (ver abajo) | Cada una |
-| Mar 24 | Ventas + `docs/ventas.md` | A definir |
-| Mié 25 | README, datos en producción, `docs/defensa.md`, cambios cruzados | Las tres |
-| Jue 26 | **Defensa** | — |
-
-**Módulos del lunes:**
-
-| Módulo | Contenido |
+| Integrante | Módulos |
 |---|---|
-| **A** | Productos: listado, búsqueda, alta, edición, activar/desactivar |
-| **B** | Clientes: listado, búsqueda, alta, edición + cuenta corriente y pagos |
-| **C** | Layout, menú lateral, componentes compartidos, formato de importes y fechas |
-
-**El miércoles cada integrante hace un cambio pequeño en un módulo que NO
-escribió** y manda captura de que funciona, más una explicación escrita de qué
-tocó y por qué. Es exactamente lo que el profesor pide en la defensa.
+| **Agustín** | Base de datos, seed, y **Ventas** (RF-V) |
+| **Jazmín** | Interfaz general y layout, **Productos** (RF-P), **Usuarios** (RF-U4, U5) |
+| **Majo** | **Clientes y cuenta corriente** (RF-C), **Tablero** (RF-T) |
 
 ---
 
-## 10. Reglas de negocio que no se negocian
+## 10. Prioridades
 
-Estas son las que el profesor pregunta y evalúa:
+El guion de la defensa define qué es obligatorio. Son cuatro operaciones que
+tienen que funcionar sobre la URL pública:
 
-1. **La venta es atómica.** Al confirmar: se registra el comprobante, se descuenta
-   el stock y, si es cuenta corriente, se genera la deuda. Las tres cosas en una
-   transacción: o pasan todas o no pasa ninguna.
-2. **El stock nunca queda negativo.** Se verifica en el servidor, dentro de la
-   transacción, no solo en la interfaz.
-3. **Cuenta corriente solo para clientes registrados.** Un consumidor final no
-   puede comprar a crédito.
-4. **No se admite un pago mayor al saldo adeudado.**
-5. **Un producto inactivo** no se puede agregar a ventas nuevas, pero sigue
-   apareciendo en los comprobantes anteriores.
-6. **Los permisos se verifican en el servidor.** Ocultar un botón no es seguridad:
-   un operador que llame directamente a `/api/usuarios` debe recibir `403`.
-7. **Las contraseñas nunca se guardan en texto plano**, y las respuestas de la API
-   nunca incluyen la contraseña ni su hash.
-8. **No se piden ni se guardan números de tarjeta.** El pago con tarjeta se
-   registra de forma simulada.
-9. **Sin anulación, edición ni devolución** de ventas y pagos confirmados. Están
-   fuera del alcance del parcial.
+1. Venta a consumidor final con efectivo
+2. Venta a un cliente **nuevo** en cuenta corriente
+3. Pago de ese cliente
+4. **Anulación** de una factura
 
----
+verificando stock y saldo después de cada paso.
 
-## 11. Alcance recortado — qué NO se implementa
+**Imprescindible:** login y protección · catálogo · alta de clientes · nueva
+venta con las tres formas de pago · comprobante · listado · anulación · cuenta
+corriente · pagos.
 
-El grupo tiene 6 días y se coordina solo por texto. Un sistema más chico que las
-tres puedan defender vale más que uno completo que solo una entiende. El
-enunciado pide declarar lo pendiente en el README, así que **lo recortado se
-documenta, no se esconde**.
+**Si alcanza el tiempo, en este orden:** categorías · ingresos y egresos
+manuales de stock · tablero con gráficos · gestión de usuarios · perfil ·
+saldos · recibo imprimible · filtros y paginado.
 
-**Recortado a propósito:**
-
-- **Pantalla de administración de usuarios.** El administrador y un operador se
-  crean por `seed`, documentado en el README. Las rutas `/api/usuarios` con
-  verificación de permisos **sí se implementan**: son la prueba de que los
-  permisos se controlan en el servidor, y eso se pregunta en la defensa.
-- **Formulario de entrada y salida manual de stock.** El historial de movimientos
-  sí existe — lo generan las ventas y el stock inicial del seed.
-
-**Fuera del alcance según el enunciado:**
-
-- Impuestos, descuentos, devoluciones, anulaciones
-- Pagos combinados, cuotas, intereses, imputación de un pago a una factura
-- Múltiples empresas, depósitos o monedas
-- Integración con ARCA o comprobantes fiscales
-- Límite de crédito por cliente
-- Paginación de listados
-
-**Opcionales — solo si todo lo obligatorio ya funciona:** panel de indicadores,
-gráficos, filtros de ventas, impresión del comprobante, roles configurables.
-
-> Si el profesor pregunta por el límite de crédito o por la anulación de
-> facturas, la respuesta correcta es que están fuera del alcance definido en el
-> enunciado. No implementarlos.
+**Lo que no entre se documenta en el README citando su código RF.** Un
+requerimiento declarado como pendiente cuesta mucho menos que uno a medias que
+se rompe en la demo.
 
 ---
 
-## 12. Secretos
+## 11. Interfaz
 
-Las credenciales de Turso y el secreto de sesión van en `.env.local`, que está en
-`.gitignore` y **nunca se commitea**. En producción se cargan como variables de
-entorno en Vercel. El primer administrador se crea con el script de seed, con su
-contraseña configurada fuera del repositorio.
+De la sección 8 de la consigna:
+
+- **Diseño propio.** Las pantallas del profesor son referencia de *contenido*,
+  no de diseño. Está dicho explícitamente: cada equipo propone su propia
+  presentación. **No copiar el mockup.**
+- **Consistencia:** mismos colores, tipografía, botones y espaciado en todas
+  las pantallas. Módulo activo resaltado en el panel lateral.
+- **Adaptable:** usable desde 360 px. El panel lateral se colapsa en menú.
+- **Estados completos:** cada listado contempla carga, vacío y error. Cada
+  operación confirma su resultado.
+- **Validación en ambos lados**, con las mismas reglas.
+- **Confirmación** de acciones irreversibles: anular, dar de baja, desactivar.
+- **Venta ágil:** la pantalla de nueva venta se opera con teclado.
+- **Formatos locales:** `$ 12.345,50`, `dd/mm/aaaa`, hora de Argentina.
 
 ---
 
-## 13. Registro de errores de la IA
+## 12. Datos de prueba
+
+La consigna pide, como mínimo: **2 usuarios** (uno por rol), **5 categorías**,
+**30 productos**, **10 clientes** y **50 facturas repartidas en los últimos 30
+días**, para que el tablero muestre información desde el primer arranque.
+
+---
+
+## 13. Secretos
+
+Credenciales de Turso y contraseñas iniciales en `.env.local`, ignorado por
+Git. En producción, variables de entorno de Vercel. El primer administrador lo
+crea el seed, con su contraseña fuera del repositorio. La entrega incluye un
+`.env.example` y los usuarios de prueba por rol.
+
+---
+
+## 14. Registro de errores de la IA
 
 Cuando un agente se equivoque y haya que corregirlo, anotarlo en `NOTAS-IA.md`:
 fecha, qué hizo mal, cómo se corrigió.
 
 El profesor pregunta textualmente: *"muestren algo que el agente hizo mal y cómo
-lo corrigieron"*. Si no se anota sobre la marcha, el jueves no se va a acordar
-nadie.
+lo corrigieron"*.
