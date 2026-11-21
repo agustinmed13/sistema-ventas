@@ -174,7 +174,6 @@ function textoOpcional(valor: unknown): string | null | undefined {
 // "any" porque los datos llegan tal cual del JSON, sin validar: el trabajo
 // de esta función es justamente revisarlos campo por campo.
 // ═════════════════════════════════════════════════════════════
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function crearCliente(usuario: UsuarioSesion, datos: any) {
   // ═══ 1. VALIDAR ═══
   // Juntamos TODOS los errores de campo en "detalles", así el formulario
