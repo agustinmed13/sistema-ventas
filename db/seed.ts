@@ -6,9 +6,17 @@
 //
 // Borra todo y vuelve a cargar, así se puede correr las veces que haga
 // falta y siempre queda el mismo estado conocido.
+//
+// CONSIGNA 10.7: las OPERACIONES (stock inicial y facturas) se hacen con
+// los mismos servicios que usa la aplicación: moverStock() y
+// crearFactura(). Así los datos de prueba cumplen todas las reglas
+// (stock nunca negativo, límite de crédito, numeración correlativa) y el
+// seed sirve además como prueba de los servicios.
+// Los datos BASE (usuarios, categorías, productos, clientes) se cargan
+// directo: no son operaciones, no tienen reglas que respetar.
 
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { db } from './index';
 import {
   usuarios,
@@ -22,6 +30,9 @@ import {
   pagos,
   movimientosCuenta,
 } from './schema';
+import { ApiError } from '../lib/errores';
+import { moverStock } from '../lib/servicios/stock';
+import { crearFactura, type UsuarioSesion } from '../lib/servicios/facturas';
 
 // ─────────────────────────────────────────────────────────────
 // Generador de números "al azar" pero reproducible.
@@ -89,7 +100,7 @@ await db.delete(clientes);
 await db.delete(usuarios);
 
 // ─────────────────────────────────────────────────────────────
-// 3. Usuarios — uno por rol
+// 3. Usuarios — uno por rol (dato base, directo)
 // La contraseña nunca se guarda: se guarda su hash.
 // El 10 es el "costo": bcrypt repite el cálculo 2^10 veces para que
 // probar contraseñas por fuerza bruta sea inviable.
@@ -115,11 +126,18 @@ await db.insert(usuarios).values([
 ]);
 
 const usuariosGuardados = await db.select().from(usuarios);
-const idAdmin = usuariosGuardados.find((u) => u.rol === 'admin')!.id;
-const idVendedor = usuariosGuardados.find((u) => u.rol === 'vendedor')!.id;
+const filaAdmin = usuariosGuardados.find((u) => u.rol === 'admin')!;
+const filaVendedor = usuariosGuardados.find((u) => u.rol === 'vendedor')!;
+const idAdmin = filaAdmin.id;
+const idVendedor = filaVendedor.id;
+
+// Los servicios reciben "el usuario que hace la operación", igual que
+// cuando los llama una ruta con la sesión abierta.
+const admin: UsuarioSesion = { id: filaAdmin.id, nombre: filaAdmin.nombre, rol: filaAdmin.rol };
+const vendedor: UsuarioSesion = { id: filaVendedor.id, nombre: filaVendedor.nombre, rol: filaVendedor.rol };
 
 // ─────────────────────────────────────────────────────────────
-// 4. Categorías
+// 4. Categorías (dato base, directo)
 // ─────────────────────────────────────────────────────────────
 console.log('Creando categorías...');
 await db.insert(categorias).values(
@@ -135,8 +153,9 @@ const idCategoria = (nombre: string) =>
   categoriasGuardadas.find((c) => c.nombre === nombre)!.id;
 
 // ─────────────────────────────────────────────────────────────
-// 5. Productos
+// 5. Productos (dato base, directo)
 // Los precios van en centavos enteros: 650000 = $ 6.500,00
+// Se crean con existencia 0: el stock inicial entra en el paso 6.
 // ─────────────────────────────────────────────────────────────
 console.log('Creando productos...');
 
@@ -183,17 +202,13 @@ const catalogo = [
   { codigo: 'PER-004', descripcion: 'Desodorante Rexona 150 ml', categoria: 'Perfumería', precioCentavos: 428000, stockMinimo: 12 },
 ];
 
-// La existencia inicial se carga como un ingreso de stock (RF-P2):
-// nunca se escribe a mano.
-const existenciaInicial = catalogo.map(() => entreEnteros(60, 140));
-
 await db.insert(productos).values(
-  catalogo.map((p, i) => ({
+  catalogo.map((p) => ({
     codigo: p.codigo,
     descripcion: p.descripcion,
     categoriaId: idCategoria(p.categoria),
     precioCentavos: p.precioCentavos,
-    existencia: existenciaInicial[i],
+    existencia: 0, // la carga el paso 6, con moverStock
     stockMinimo: p.stockMinimo,
     activo: true,
     creadoEn: ahora,
@@ -202,27 +217,32 @@ await db.insert(productos).values(
 
 const productosGuardados = await db.select().from(productos);
 
-// Movimiento de ingreso por el stock inicial de cada producto
-await db.insert(movimientosStock).values(
-  productosGuardados.map((p) => ({
-    productoId: p.id,
-    tipo: 'ingreso' as const,
-    cantidad: p.existencia, // positiva: suma
-    existenciaResultante: p.existencia,
-    motivo: 'Stock inicial',
-    fecha: haceDias(31),
-    usuarioId: idAdmin,
-    facturaId: null,
-  }))
-);
+// ─────────────────────────────────────────────────────────────
+// 6. Stock inicial — con el SERVICIO moverStock() (RF-P2, consigna 10.2)
+// La existencia no se escribe a mano: el stock inicial entra como un
+// INGRESO, igual que cualquier compra. Así queda su movimiento y la suma
+// de movimientos coincide con la existencia (regla 2).
+// Una sola transacción: entra todo el stock inicial o nada.
+// ─────────────────────────────────────────────────────────────
+console.log('Cargando stock inicial...');
+const fechaStockInicial = haceDias(31); // antes de la primera venta
 
-// Llevamos la existencia en memoria para ir descontándola con cada venta
-const existenciaActual = new Map<number, number>(
-  productosGuardados.map((p) => [p.id, p.existencia])
-);
+await db.transaction(async (tx) => {
+  for (const producto of productosGuardados) {
+    await moverStock(tx, {
+      productoId: producto.id,
+      tipo: 'ingreso',
+      cantidad: entreEnteros(60, 140), // positiva: suma
+      motivo: 'Stock inicial',
+      fecha: fechaStockInicial,
+      usuarioId: idAdmin,
+      facturaId: null,
+    });
+  }
+});
 
 // ─────────────────────────────────────────────────────────────
-// 6. Clientes
+// 7. Clientes (dato base, directo)
 // Solo los habilitados pueden comprar en cuenta corriente (regla 6)
 // ─────────────────────────────────────────────────────────────
 console.log('Creando clientes...');
@@ -240,27 +260,39 @@ await db.insert(clientes).values([
 ]);
 
 const clientesGuardados = await db.select().from(clientes);
-const clientesACuenta = clientesGuardados.filter(
-  (c) => c.cuentaCorrienteHabilitada
-);
+const clientesACuenta = clientesGuardados.filter((c) => c.cuentaCorrienteHabilitada);
 
 // ─────────────────────────────────────────────────────────────
-// 7. Facturas — 50 repartidas en los últimos 30 días
+// 8. Facturas — con el SERVICIO crearFactura() (consigna 10.7)
 //
-// Cada factura genera, además de sus ítems:
-//   - un movimiento de stock negativo por producto vendido
-//   - la actualización de la existencia del producto
-//   - si es en cuenta corriente, un débito en movimientos_cuenta
+// Se le pasa el mismo objeto que recibiría POST /api/facturas:
+//   { clienteId, formaPago, items, montoRecibidoCentavos, tarjeta }
+// Sin precios ni totales: los calcula el servicio (sección 11.1).
 //
-// Es la misma cadena que tiene que hacer la API al confirmar una venta.
+// Con eso, sin que el seed lo controle a mano:
+//   - no se vende más stock del que hay (regla 1)
+//   - no se supera el límite de crédito de ningún cliente (regla 7)
+//   - la numeración queda correlativa y sin huecos (regla 4)
+//   - cada venta deja sus movimientos de stock y de cuenta (regla 2)
+//
+// Si el servicio rechaza una venta (ApiError, por ejemplo porque
+// superaría el límite del cliente), NO cortamos el seed: la descartamos
+// y probamos con otra combinación. Es exactamente lo que pasaría en el
+// mostrador: el sistema no deja hacer esa venta.
 // ─────────────────────────────────────────────────────────────
-console.log('Creando facturas...');
+console.log('Creando facturas con crearFactura()...');
 
+const FACTURAS_A_CREAR = 50;
+const MAXIMO_INTENTOS = 300; // por las dudas, para que nunca quede en un ciclo infinito
 const marcasTarjeta = ['Visa', 'Mastercard', 'American Express'];
-const saldoPorCliente = new Map<number, number>();
 
-for (let numero = 1; numero <= 50; numero++) {
-  const fecha = haceDias(entreEnteros(0, 29));
+let facturasCreadas = 0;
+let ventasDescartadas = 0;
+const motivosDescarte = new Map<string, number>(); // código de error → cuántas veces
+let intentos = 0;
+
+while (facturasCreadas < FACTURAS_A_CREAR && intentos < MAXIMO_INTENTOS) {
+  intentos++;
 
   // La forma de pago define si hay cliente y si genera deuda
   const dado = azar();
@@ -272,177 +304,299 @@ for (let numero = 1; numero <= 50; numero++) {
   // Cuenta corriente exige un cliente registrado y habilitado (regla 6).
   // En las otras formas de pago el cliente es opcional:
   // sin cliente = consumidor final.
-  let cliente = null;
+  let clienteId: number | null = null;
   if (formaPago === 'cuenta_corriente') {
-    cliente = elegir(clientesACuenta);
+    clienteId = elegir(clientesACuenta).id;
   } else if (azar() < 0.4) {
-    cliente = elegir(clientesGuardados);
+    clienteId = elegir(clientesGuardados).id;
   }
 
-  // Entre 1 y 5 productos distintos por factura
+  // Entre 1 y 5 productos distintos por factura, de 1 a 4 unidades
   const cantidadRenglones = entreEnteros(1, 5);
   const elegidos = new Set<number>();
   while (elegidos.size < cantidadRenglones) {
     elegidos.add(entreEnteros(0, productosGuardados.length - 1));
   }
+  const items = [...elegidos].map((indice) => ({
+    productoId: productosGuardados[indice].id,
+    cantidad: entreEnteros(1, 4),
+  }));
 
-  const renglones = [...elegidos].map((indice) => {
-    const producto = productosGuardados[indice];
-    const cantidad = entreEnteros(1, 4);
-    return {
-      producto,
-      cantidad,
-      // El precio se congela: se copia el del momento de la venta (regla 3)
-      precioUnitarioCentavos: producto.precioCentavos,
-      subtotalCentavos: producto.precioCentavos * cantidad,
-    };
-  });
+  // Lo que el cliente pagaría, igual que el body de la API
+  const datos: {
+    clienteId: number | null;
+    formaPago: string;
+    items: { productoId: number; cantidad: number }[];
+    montoRecibidoCentavos?: number;
+    tarjeta?: { tipo: string; marca: string; ultimos4: string };
+  } = { clienteId, formaPago, items };
 
-  const totalCentavos = renglones.reduce((t, r) => t + r.subtotalCentavos, 0);
-
-  // Datos de tarjeta: solo tipo, marca y últimos 4 dígitos (regla 9)
-  const esTarjeta = formaPago === 'tarjeta';
-  const esContado = formaPago === 'contado';
-
-  const [facturaCreada] = await db
-    .insert(facturas)
-    .values({
-      puntoVenta: 1,
-      numero,
-      fecha,
-      clienteId: cliente ? cliente.id : null,
-      usuarioId: azar() < 0.7 ? idVendedor : idAdmin,
-      totalCentavos,
-      formaPago,
-      tarjetaTipo: esTarjeta ? (azar() < 0.5 ? 'debito' : 'credito') : null,
-      tarjetaMarca: esTarjeta ? elegir(marcasTarjeta) : null,
-      tarjetaUltimos4: esTarjeta ? String(entreEnteros(1000, 9999)) : null,
-      // En contado se guarda lo que entregó el cliente, para el vuelto
-      montoRecibidoCentavos: esContado
-        ? Math.ceil(totalCentavos / 100000) * 100000
-        : null,
-      estado: 'emitida',
-      motivoAnulacion: null,
-      anuladaEn: null,
-      anuladaPorId: null,
-    })
-    .returning();
-
-  // Los ítems, con la descripción copiada del catálogo
-  await db.insert(facturaItems).values(
-    renglones.map((r) => ({
-      facturaId: facturaCreada.id,
-      productoId: r.producto.id,
-      descripcion: r.producto.descripcion,
-      cantidad: r.cantidad,
-      precioUnitarioCentavos: r.precioUnitarioCentavos,
-      subtotalCentavos: r.subtotalCentavos,
-    }))
-  );
-
-  // Un movimiento de stock por producto, con la existencia que queda
-  for (const r of renglones) {
-    const quedaba = existenciaActual.get(r.producto.id)!;
-    const queda = quedaba - r.cantidad;
-    existenciaActual.set(r.producto.id, queda);
-
-    await db.insert(movimientosStock).values({
-      productoId: r.producto.id,
-      tipo: 'venta',
-      cantidad: -r.cantidad, // negativa: resta
-      existenciaResultante: queda,
-      motivo: `Venta 0001-${String(numero).padStart(8, '0')}`,
-      fecha,
-      usuarioId: facturaCreada.usuarioId,
-      facturaId: facturaCreada.id,
-    });
+  if (formaPago === 'contado') {
+    // El cliente entrega un monto redondo, el próximo múltiplo de
+    // $ 1.000 por encima del total. Calculamos el total acá SOLO para
+    // decidir cuánta plata "entrega"; el total que vale lo calcula el
+    // servicio con los precios de la base.
+    let totalEstimado = 0;
+    for (const item of items) {
+      const producto = productosGuardados.find((p) => p.id === item.productoId)!;
+      totalEstimado = totalEstimado + producto.precioCentavos * item.cantidad;
+    }
+    datos.montoRecibidoCentavos = Math.ceil(totalEstimado / 100000) * 100000;
   }
 
-  // Si fue a cuenta corriente, queda la deuda registrada
-  if (formaPago === 'cuenta_corriente' && cliente) {
-    await db.insert(movimientosCuenta).values({
-      clienteId: cliente.id,
-      tipo: 'debito',
-      importeCentavos: totalCentavos,
-      fecha,
-      descripcion: `Factura 0001-${String(numero).padStart(8, '0')}`,
-      facturaId: facturaCreada.id,
-      pagoId: null,
-    });
+  if (formaPago === 'tarjeta') {
+    // Regla 9: solo tipo, marca y últimos 4 dígitos
+    datos.tarjeta = {
+      tipo: azar() < 0.5 ? 'debito' : 'credito',
+      marca: elegir(marcasTarjeta),
+      ultimos4: String(entreEnteros(1000, 9999)),
+    };
+  }
 
-    saldoPorCliente.set(
-      cliente.id,
-      (saldoPorCliente.get(cliente.id) ?? 0) + totalCentavos
-    );
+  // 70% las hace el vendedor, 30% el admin (los dos pueden facturar)
+  const quienVende = azar() < 0.7 ? vendedor : admin;
+
+  try {
+    await crearFactura(quienVende, datos);
+    facturasCreadas++;
+  } catch (error) {
+    // Un ApiError es el servicio diciendo "esta venta no se puede":
+    // la descartamos y seguimos. Cualquier otro error es un problema
+    // real (se cayó la base, un bug): ese sí corta el seed.
+    if (error instanceof ApiError) {
+      ventasDescartadas++;
+      motivosDescarte.set(error.code, (motivosDescarte.get(error.code) ?? 0) + 1);
+    } else {
+      throw error;
+    }
   }
 }
 
-// Dejamos la existencia de los productos como quedó después de las ventas
-for (const [productoId, existencia] of existenciaActual) {
-  await db
-    .update(productos)
-    .set({ existencia })
-    .where(eq(productos.id, productoId));
+if (facturasCreadas < FACTURAS_A_CREAR) {
+  console.warn(`  ATENCIÓN: solo se pudieron crear ${facturasCreadas} facturas en ${MAXIMO_INTENTOS} intentos.`);
 }
 
 // ─────────────────────────────────────────────────────────────
-// 8. Pagos — algunos clientes cancelan parte de su deuda
-// Un pago nunca supera el saldo adeudado (regla 8)
+// 9. Repartir las fechas en los últimos 30 días
+//
+// POR QUÉ: crearFactura() pone la fecha del servidor (y está bien: en la
+// aplicación real el cliente no elige la fecha). Pero entonces las 50
+// facturas quedarían de hoy y el tablero no tendría nada que graficar.
+//
+// Las REGLAS DE NEGOCIO ya las aplicó el servicio: stock, límites,
+// numeración, movimientos. La fecha es solo presentación, para que el
+// tablero muestre información desde el primer arranque (consigna,
+// sección 8). Por eso se corrige después, sin tocar nada más.
+//
+// Para que todo quede consistente:
+//   - las fechas se ordenan de más vieja a más nueva y se asignan en
+//     orden de número: la factura 1 es la más vieja y la 50 la más
+//     nueva, como en la realidad (regla 4: correlativa)
+//   - se actualizan también los movimientos de stock y de cuenta de
+//     cada factura, que tienen que tener la misma fecha que ella
+// ─────────────────────────────────────────────────────────────
+console.log('Repartiendo fechas en los últimos 30 días...');
+
+const facturasEnOrden = await db.select().from(facturas).orderBy(asc(facturas.numero));
+
+const fechasNuevas: string[] = [];
+for (let i = 0; i < facturasEnOrden.length; i++) {
+  fechasNuevas.push(haceDias(entreEnteros(0, 29)));
+}
+// Las fechas ISO se ordenan bien como texto
+fechasNuevas.sort();
+
+for (let i = 0; i < facturasEnOrden.length; i++) {
+  const factura = facturasEnOrden[i];
+  const fecha = fechasNuevas[i];
+
+  await db.update(facturas).set({ fecha }).where(eq(facturas.id, factura.id));
+  await db.update(movimientosStock).set({ fecha }).where(eq(movimientosStock.facturaId, factura.id));
+  await db.update(movimientosCuenta).set({ fecha }).where(eq(movimientosCuenta.facturaId, factura.id));
+}
+
+// ─────────────────────────────────────────────────────────────
+// 10. Pagos — algunos clientes cancelan parte de su deuda
+//
+// PENDIENTE: el servicio de pagos lo está escribiendo una compañera.
+// Cuando exista registrarPago() en lib/servicios/pagos.ts, hay que
+// usarlo acá en lugar de insertar directo en las tablas (consigna 10.7).
+//
+// Mientras tanto se respeta la regla 8 a mano: un pago NUNCA supera la
+// deuda. Se calcula el saldo REAL de cada cliente desde
+// movimientos_cuenta (débitos − créditos, regla 7), después de las
+// facturas, y se paga como mucho ese monto.
 // ─────────────────────────────────────────────────────────────
 console.log('Creando pagos...');
 
 const mediosPago = ['efectivo', 'transferencia', 'tarjeta'] as const;
 let numeroRecibo = 1;
 
-for (const [clienteId, saldo] of saldoPorCliente) {
-  // Solo la mitad de los clientes con deuda hizo algún pago,
-  // para que queden saldos pendientes que mostrar
+for (const cliente of clientesACuenta) {
+  const movimientos = await db
+    .select()
+    .from(movimientosCuenta)
+    .where(eq(movimientosCuenta.clienteId, cliente.id));
+
+  let saldo = 0;
+  let ultimaFechaDeuda = '';
+  for (const mov of movimientos) {
+    if (mov.tipo === 'debito') {
+      saldo = saldo + mov.importeCentavos;
+      if (mov.fecha > ultimaFechaDeuda) ultimaFechaDeuda = mov.fecha;
+    } else {
+      saldo = saldo - mov.importeCentavos;
+    }
+  }
+
+  // Sin deuda no hay nada que pagar
+  if (saldo <= 0) continue;
+
+  // Solo la mitad de los clientes con deuda hizo algún pago, para que
+  // queden saldos pendientes que mostrar
   if (azar() < 0.5) continue;
 
-  // Paga entre el 30% y el 80% de lo que debe
+  // Paga entre el 30% y el 80% de lo que debe: nunca más que el saldo
   const importeCentavos = Math.floor(saldo * (0.3 + azar() * 0.5));
-  if (importeCentavos <= 0) continue;
+  if (importeCentavos <= 0 || importeCentavos > saldo) continue;
 
-  const fecha = haceDias(entreEnteros(0, 10));
+  // El pago va DESPUÉS de su última compra a cuenta: no tiene sentido
+  // pagar una deuda antes de tenerla
+  const desde = new Date(ultimaFechaDeuda).getTime();
+  const hasta = Date.now();
+  const fecha = new Date(desde + azar() * (hasta - desde)).toISOString();
 
-  const [pagoCreado] = await db
-    .insert(pagos)
-    .values({
-      numeroRecibo: numeroRecibo++,
-      clienteId,
-      fecha,
+  // Dos tablas → una transacción (AGENTS.md sección 3)
+  await db.transaction(async (tx) => {
+    const [pagoCreado] = await tx
+      .insert(pagos)
+      .values({
+        numeroRecibo: numeroRecibo++,
+        clienteId: cliente.id,
+        fecha,
+        importeCentavos,
+        medio: elegir([...mediosPago]),
+        observacion: null,
+        usuarioId: idVendedor,
+      })
+      .returning();
+
+    // El pago es un CRÉDITO: baja lo que debe el cliente
+    await tx.insert(movimientosCuenta).values({
+      clienteId: cliente.id,
+      tipo: 'credito',
       importeCentavos,
-      medio: elegir([...mediosPago]),
-      observacion: null,
-      usuarioId: idVendedor,
-    })
-    .returning();
-
-  await db.insert(movimientosCuenta).values({
-    clienteId,
-    tipo: 'credito',
-    importeCentavos,
-    fecha,
-    descripcion: `Recibo ${String(pagoCreado.numeroRecibo).padStart(8, '0')}`,
-    facturaId: null,
-    pagoId: pagoCreado.id,
+      fecha,
+      descripcion: `Recibo ${String(pagoCreado.numeroRecibo).padStart(8, '0')}`,
+      facturaId: null,
+      pagoId: pagoCreado.id,
+    });
   });
 }
 
 // ─────────────────────────────────────────────────────────────
+// 11. Verificación (consigna 10.8, punto 5)
+// Así el seed sirve además como prueba de los servicios. Si algo no
+// cierra, lo dice y termina con error.
+// ─────────────────────────────────────────────────────────────
+console.log('');
+console.log('Verificando...');
+let errores = 0;
+
+// --- a) Existencia = suma de movimientos (regla 2), y nunca negativa (regla 1)
+const todosLosProductos = await db.select().from(productos);
+const todosLosMovStock = await db.select().from(movimientosStock);
+
+for (const producto of todosLosProductos) {
+  let suma = 0;
+  for (const mov of todosLosMovStock) {
+    if (mov.productoId === producto.id) suma = suma + mov.cantidad;
+  }
+  if (suma !== producto.existencia) {
+    console.error(`  FALLA ${producto.codigo}: existencia ${producto.existencia}, suma de movimientos ${suma}`);
+    errores++;
+  }
+  if (producto.existencia < 0) {
+    console.error(`  FALLA ${producto.codigo}: existencia negativa (${producto.existencia})`);
+    errores++;
+  }
+}
+console.log(`  Existencia = suma de movimientos en ${todosLosProductos.length} productos`);
+
+// --- b) Saldo = débitos − créditos, y coincide con lo que dicen las
+//        facturas a cuenta y los pagos. Nunca negativo (regla 8) ni
+//        por encima del límite (regla 7).
+const todasLasFacturas = await db.select().from(facturas);
+const todosLosPagos = await db.select().from(pagos);
+const todosLosMovCuenta = await db.select().from(movimientosCuenta);
+
+for (const cliente of clientesGuardados) {
+  // Lo que dicen los movimientos de cuenta
+  let saldoMovimientos = 0;
+  for (const mov of todosLosMovCuenta) {
+    if (mov.clienteId !== cliente.id) continue;
+    if (mov.tipo === 'debito') saldoMovimientos = saldoMovimientos + mov.importeCentavos;
+    else saldoMovimientos = saldoMovimientos - mov.importeCentavos;
+  }
+
+  // Lo que dicen los documentos: facturas a cuenta emitidas − pagos
+  let saldoDocumentos = 0;
+  for (const f of todasLasFacturas) {
+    if (f.clienteId === cliente.id && f.formaPago === 'cuenta_corriente' && f.estado === 'emitida') {
+      saldoDocumentos = saldoDocumentos + f.totalCentavos;
+    }
+  }
+  for (const p of todosLosPagos) {
+    if (p.clienteId === cliente.id) saldoDocumentos = saldoDocumentos - p.importeCentavos;
+  }
+
+  if (saldoMovimientos !== saldoDocumentos) {
+    console.error(`  FALLA ${cliente.nombre}: movimientos dan ${saldoMovimientos}, facturas − pagos dan ${saldoDocumentos}`);
+    errores++;
+  }
+  if (saldoMovimientos < 0) {
+    console.error(`  FALLA ${cliente.nombre}: saldo a favor (${saldoMovimientos}), un pago superó la deuda`);
+    errores++;
+  }
+  if (cliente.limiteCreditoCentavos !== null && saldoMovimientos > cliente.limiteCreditoCentavos) {
+    console.error(`  FALLA ${cliente.nombre}: debe ${saldoMovimientos}, límite ${cliente.limiteCreditoCentavos}`);
+    errores++;
+  }
+}
+console.log(`  Saldo = débitos − créditos, sin saldos a favor ni límites superados, en ${clientesGuardados.length} clientes`);
+
+// --- c) Numeración correlativa y sin huecos (regla 4)
+const numeros = todasLasFacturas.map((f) => f.numero).sort((a, b) => a - b);
+for (let i = 0; i < numeros.length; i++) {
+  if (numeros[i] !== i + 1) {
+    console.error(`  FALLA numeración: se esperaba la factura ${i + 1} y hay ${numeros[i]}`);
+    errores++;
+    break;
+  }
+}
+console.log(`  Numeración correlativa de 1 a ${numeros.length}`);
+
+// ─────────────────────────────────────────────────────────────
 // Resumen
 // ─────────────────────────────────────────────────────────────
-const totalPagos = await db.select().from(pagos);
-const totalMovStock = await db.select().from(movimientosStock);
-
 console.log('');
 console.log('Datos cargados:');
 console.log(`  2 usuarios: admin@mostrador.com y vendedor@mostrador.com`);
 console.log(`  ${categoriasGuardadas.length} categorías`);
 console.log(`  ${productosGuardados.length} productos`);
 console.log(`  ${clientesGuardados.length} clientes`);
-console.log(`  50 facturas de los últimos 30 días`);
-console.log(`  ${totalMovStock.length} movimientos de stock`);
-console.log(`  ${totalPagos.length} pagos`);
+console.log(`  ${facturasCreadas} facturas de los últimos 30 días`);
+console.log(`  ${ventasDescartadas} ventas descartadas por el servicio`);
+for (const [codigo, veces] of motivosDescarte) {
+  console.log(`      ${codigo}: ${veces}`);
+}
+console.log(`  ${todosLosMovStock.length} movimientos de stock`);
+console.log(`  ${todosLosPagos.length} pagos`);
+console.log('');
 
+if (errores > 0) {
+  console.error(`VERIFICACIÓN FALLIDA: ${errores} problema(s). Revisar arriba.`);
+  process.exit(1);
+}
+console.log('Verificación OK: todos los datos cumplen las reglas.');
 process.exit(0);
