@@ -16,7 +16,7 @@
 // son los de las columnas de la base (tipoDocumento, numeroDocumento...).
 // La traducción se hace en un solo lugar: la función aRespuesta(), más abajo.
 
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { clientes, movimientosCuenta } from '@/db/schema';
 import { ApiError, type DetalleError } from '@/lib/errores';
@@ -81,6 +81,27 @@ async function calcularSaldos() {
     clienteId: s.clienteId,
     saldo: Number(s.debitos) - Number(s.creditos), // regla 7
   }));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Calcula el saldo de UN cliente — regla 7: débitos − créditos.
+// Es la misma cuenta que calcularSaldos(), pero para un solo cliente.
+//
+// "conexion" puede ser db (la conexión normal) o tx (una transacción).
+// El servicio de pagos la llama con tx: así lee el saldo DENTRO de la
+// misma transacción en la que graba el pago (ver lib/servicios/pagos.ts).
+// Pick<typeof db, 'select'> = "cualquier cosa que tenga .select() como db".
+// ─────────────────────────────────────────────────────────────
+export async function calcularSaldoCliente(conexion: Pick<typeof db, 'select'>, clienteId: number) {
+  const [suma] = await conexion
+    .select({
+      debitos: sql<number>`coalesce(sum(case when ${movimientosCuenta.tipo} = 'debito' then ${movimientosCuenta.importeCentavos} end), 0)`,
+      creditos: sql<number>`coalesce(sum(case when ${movimientosCuenta.tipo} = 'credito' then ${movimientosCuenta.importeCentavos} end), 0)`,
+    })
+    .from(movimientosCuenta)
+    .where(eq(movimientosCuenta.clienteId, clienteId));
+
+  return Number(suma.debitos) - Number(suma.creditos); // regla 7
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -354,7 +375,10 @@ export async function crearCliente(usuario: UsuarioSesion, datos: any) {
 
   // A partir de acá sabemos que los datos son válidos
   const tipoDoc: 'DNI' | 'CUIT' = datos.tipoDoc;
-  const nroDoc: string = datos.nroDoc.trim();
+  // El documento se guarda SIN puntos ni guiones: "28.456.123" → "28456123".
+  // Los puntos se agregan solo al mostrarlo, con formatearDocumento() de
+  // lib/formato.ts, que espera recibirlo así.
+  const nroDoc: string = limpiarDocumento(datos.nroDoc.trim());
   const nombre: string = datos.nombre.trim();
 
   // ═══ 2. PERMISO ═══
