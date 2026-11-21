@@ -26,7 +26,7 @@ export default function PaginaLogin() {
     try {
       // Pedido HTTP a nuestra API. Mandamos los datos como texto JSON y
       // avisamos en la cabecera que el cuerpo es JSON.
-      const respuesta = await fetch('/api/sesion', {
+      const respuesta = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, contrasena }),
@@ -42,10 +42,11 @@ export default function PaginaLogin() {
         return;
       }
 
-      // Error: la API siempre responde { error: { codigo, mensaje, detalles } }.
-      // Si por algún motivo el cuerpo no fuera JSON, usamos un mensaje genérico.
+      // Error: la API siempre responde { error: { code, message, details } }
+      // (sección 11.1). Si por algún motivo el cuerpo no fuera JSON, usamos
+      // un mensaje genérico.
       const cuerpo = await respuesta.json().catch(() => null);
-      setError(cuerpo?.error?.mensaje || 'No se pudo iniciar sesión.');
+      setError(cuerpo?.error?.message || 'No se pudo iniciar sesión.');
     } catch {
       // fetch solo falla así si no hubo respuesta (sin internet, servidor caído).
       setError('No se pudo conectar con el servidor.');

@@ -1,77 +1,126 @@
-// Funciones que arman las respuestas de error de la API.
+// Errores de la API (consigna, secciones 10.4 y 11.1).
 //
-// Todas devuelven el mismo formato (ver AGENTS.md, sección 5):
+// Cómo se usa:
+//   - Los SERVICIOS lanzan un ApiError cuando algo no se puede hacer:
+//       throw new ApiError(409, 'STOCK_INSUFICIENTE', 'No hay stock de Café.');
+//   - Las RUTAS envuelven todo en try/catch y en el catch llaman a
+//     manejarError(error), que arma la respuesta HTTP.
 //
-//   { "error": { "codigo": "...", "mensaje": "...", "detalles": { ... } } }
+// Formato de la respuesta (sección 11.1):
+//   {
+//     "error": {
+//       "code": "VALIDACION",
+//       "message": "Hay campos con errores.",
+//       "details": [{ "campo": "email", "mensaje": "Es obligatorio." }]
+//     }
+//   }
+// "details" es opcional y, cuando está, es un ARREGLO.
+
+// ─────────────────────────────────────────────────────────────
+// Los 22 códigos válidos (sección 11.8). Al ser un tipo, TypeScript
+// marca error si alguien escribe un código que no está en la lista.
 //
-// y el código HTTP que corresponde. Uso típico en una ruta:
+// Criterio para elegir entre 409 y 422:
+//   409 → el pedido choca con el ESTADO ACTUAL de los datos
+//         (ya existe ese código, no queda stock, la factura ya está anulada)
+//   422 → el pedido está bien formado pero ROMPE UNA REGLA de negocio
+//         (supera el límite de crédito, paga más de lo que debe)
+// ─────────────────────────────────────────────────────────────
+export type CodigoError =
+  // 400
+  | 'JSON_INVALIDO'
+  // 401
+  | 'NO_AUTENTICADO'
+  | 'CREDENCIALES_INVALIDAS'
+  // 403
+  | 'SIN_PERMISO'
+  // 404
+  | 'NO_ENCONTRADO'
+  // 409
+  | 'CODIGO_DUPLICADO'
+  | 'DOCUMENTO_DUPLICADO'
+  | 'EMAIL_DUPLICADO'
+  | 'NOMBRE_DUPLICADO'
+  | 'CATEGORIA_EN_USO'
+  | 'STOCK_INSUFICIENTE'
+  | 'FACTURA_ANULADA'
+  // 422
+  | 'VALIDACION'
+  | 'PRODUCTO_INACTIVO'
+  | 'CUENTA_CORRIENTE_NO_HABILITADA'
+  | 'LIMITE_CREDITO_EXCEDIDO'
+  | 'MONTO_INSUFICIENTE'
+  | 'PAGO_SUPERA_DEUDA'
+  | 'SALDO_PENDIENTE'
+  | 'CONTRASENA_ACTUAL_INCORRECTA'
+  | 'OPERACION_SOBRE_SI_MISMO'
+  // 500
+  | 'ERROR_INTERNO';
+
+// Los códigos HTTP que usa la API (sección 11.8)
+export type StatusError = 400 | 401 | 403 | 404 | 409 | 422 | 500;
+
+// Un elemento de "details": qué campo falló y por qué
+export type DetalleError = { campo: string; mensaje: string };
+
+// ─────────────────────────────────────────────────────────────
+// ApiError — la ÚNICA clase de error que lanzan los servicios (sección 10.4)
 //
-//   if (!usuario) return errorNoAutorizado();
+// "extends Error" = es un Error común (tiene message, aparece en los logs)
+// con tres datos más: el status HTTP, el código y los detalles.
+// ─────────────────────────────────────────────────────────────
+export class ApiError extends Error {
+  status: StatusError;
+  code: CodigoError;
+  details?: DetalleError[];
+
+  constructor(status: StatusError, code: CodigoError, message: string, details?: DetalleError[]) {
+    super(message); // guarda el mensaje en this.message, como cualquier Error
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Convierte un ApiError en la respuesta HTTP con el formato de la 11.1
+// ─────────────────────────────────────────────────────────────
+export function respuestaDeError(error: ApiError) {
+  const cuerpo: { code: CodigoError; message: string; details?: DetalleError[] } = {
+    code: error.code,
+    message: error.message,
+  };
+  // details solo va si hay detalles
+  if (error.details) {
+    cuerpo.details = error.details;
+  }
+  return Response.json({ error: cuerpo }, { status: error.status });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Lo que va en el catch de TODAS las rutas:
 //
-// Response.json(cuerpo, { status }) es una función estándar de la web:
-// convierte el objeto a JSON y arma la respuesta HTTP con ese código.
-
-// 400 — El pedido llegó mal armado (por ejemplo, el cuerpo no es JSON válido).
-export function errorSolicitudInvalida(mensaje = 'La solicitud está mal formada.', detalles = {}) {
-  return Response.json(
-    { error: { codigo: 'SOLICITUD_INVALIDA', mensaje, detalles } },
-    { status: 400 }
-  );
-}
-
-// 401 — No hay sesión válida, o el usuario/contraseña son incorrectos.
-export function errorNoAutorizado(mensaje = 'Tenés que iniciar sesión.', detalles = {}) {
-  return Response.json(
-    { error: { codigo: 'NO_AUTORIZADO', mensaje, detalles } },
-    { status: 401 }
-  );
-}
-
-// 403 — Hay sesión, pero el perfil no tiene permiso para esta operación.
-export function errorProhibido(mensaje = 'No tenés permiso para esta operación.', detalles = {}) {
-  return Response.json(
-    { error: { codigo: 'PROHIBIDO', mensaje, detalles } },
-    { status: 403 }
-  );
-}
-
-// 404 — El recurso pedido no existe.
-export function errorNoEncontrado(mensaje = 'El recurso no existe.', detalles = {}) {
-  return Response.json(
-    { error: { codigo: 'NO_ENCONTRADO', mensaje, detalles } },
-    { status: 404 }
-  );
-}
-
-// 409 — Conflicto con el estado actual de los datos.
-// Acá el código SÍ se pasa siempre, porque hay varios conflictos distintos y
-// el cliente necesita saber cuál fue. Ejemplo:
-//   return errorConflicto('STOCK_INSUFICIENTE', 'No hay stock suficiente.', { productoId: 1, disponible: 3, solicitado: 5 });
-export function errorConflicto(codigo: string, mensaje: string, detalles = {}) {
-  return Response.json(
-    { error: { codigo, mensaje, detalles } },
-    { status: 409 }
-  );
-}
-
-// 422 — El JSON está bien armado, pero los datos no cumplen una regla.
-// En "detalles" conviene indicar qué campo falló. Ejemplo:
-//   return errorValidacion('El precio debe ser mayor a cero.', { campo: 'precioCentavos' });
-export function errorValidacion(mensaje: string, detalles = {}) {
-  return Response.json(
-    { error: { codigo: 'VALIDACION', mensaje, detalles } },
-    { status: 422 }
-  );
-}
-
-// 500 — Error inesperado. Nunca se manda el detalle interno al cliente
-// (podría mostrar partes del código o de la base). Se registra en la consola
-// del servidor y al cliente le llega un mensaje genérico.
+//   } catch (error) {
+//     return manejarError(error);
+//   }
+//
+// - Si es un ApiError (un error "esperado", lanzado a propósito por un
+//   servicio), lo traduce a su respuesta.
+// - Si es cualquier otra cosa (se cayó la base, un bug), registra el
+//   detalle en la consola del SERVIDOR y al cliente le manda solo un 500
+//   genérico. Nunca se exponen mensajes técnicos ni partes del código.
+//
 // "unknown" porque en un catch puede llegar cualquier cosa.
-export function errorInterno(errorOriginal: unknown) {
-  console.error(errorOriginal);
+// ─────────────────────────────────────────────────────────────
+export function manejarError(error: unknown) {
+  if (error instanceof ApiError) {
+    return respuestaDeError(error);
+  }
+
+  console.error(error);
   return Response.json(
-    { error: { codigo: 'ERROR_INTERNO', mensaje: 'Ocurrió un error inesperado.', detalles: {} } },
+    { error: { code: 'ERROR_INTERNO', message: 'Ocurrió un error inesperado.' } },
     { status: 500 }
   );
 }
