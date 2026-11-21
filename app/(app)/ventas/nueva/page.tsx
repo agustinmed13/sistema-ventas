@@ -127,7 +127,10 @@ export default function NuevaVentaPage() {
   // ¿El pago está completo, según la forma elegida?
   let pagoValido = false;
   if (formaPago === 'contado') {
-    pagoValido = recibidoCentavos !== null && recibidoCentavos >= totalCentavos;
+    // El monto recibido es OPCIONAL (consigna 11.6): vacío = paga justo
+    // el total. Si escribió algo, tiene que ser válido y alcanzar.
+    const recibidoVacio = recibidoTexto.trim() === '';
+    pagoValido = recibidoVacio || (recibidoCentavos !== null && recibidoCentavos >= totalCentavos);
   } else if (formaPago === 'tarjeta') {
     pagoValido = tarjetaMarca.trim() !== '' && /^\d{4}$/.test(tarjetaUltimos4);
   } else {
@@ -373,25 +376,33 @@ export default function NuevaVentaPage() {
     setEnviando(true);
     setError('');
 
-    // El cuerpo cambia según la forma de pago. Los campos que no
+    // El cuerpo tiene el formato de la consigna 11.6 (AGENTS.md 5.1):
+    //   { clienteId, items, pago: { forma, ... } }
+    // Lo que va dentro de "pago" depende de la forma. Los campos que no
     // corresponden NO se mandan. Nunca precios ni totales: los calcula
-    // el servidor con los precios de la base.
+    // el servidor con los precios de la base. Importes en centavos.
     const items = renglones.map((r) => ({ productoId: r.productoId, cantidad: r.cantidad }));
     const clienteId = cliente ? cliente.id : null; // null = consumidor final
 
-    let cuerpoPedido;
+    let pago;
     if (formaPago === 'contado') {
-      cuerpoPedido = { clienteId, formaPago, items, montoRecibidoCentavos: recibidoCentavos };
+      // montoRecibido es opcional: si el campo quedó vacío no se manda,
+      // y el servidor toma el total (pagó justo, sin vuelto)
+      if (recibidoCentavos !== null) {
+        pago = { forma: 'contado', montoRecibido: recibidoCentavos };
+      } else {
+        pago = { forma: 'contado' };
+      }
     } else if (formaPago === 'tarjeta') {
-      cuerpoPedido = {
-        clienteId,
-        formaPago,
-        items,
+      pago = {
+        forma: 'tarjeta',
         tarjeta: { tipo: tarjetaTipo, marca: tarjetaMarca.trim(), ultimos4: tarjetaUltimos4 },
       };
     } else {
-      cuerpoPedido = { clienteId, formaPago, items };
+      pago = { forma: 'cuenta_corriente' };
     }
+
+    const cuerpoPedido = { clienteId, items, pago };
 
     try {
       const respuesta = await fetch('/api/facturas', {
@@ -671,7 +682,7 @@ export default function NuevaVentaPage() {
           <div className="space-y-2">
             <div className="space-y-1">
               <label htmlFor="recibido" className="block text-sm font-medium">
-                Monto recibido (en pesos)
+                Monto recibido (en pesos, opcional)
               </label>
               <input
                 id="recibido"
@@ -686,7 +697,10 @@ export default function NuevaVentaPage() {
               />
             </div>
 
-            {/* Mensajes del pago: solo si escribió algo */}
+            {/* Mensajes del pago */}
+            {recibidoTexto.trim() === '' && renglones.length > 0 && (
+              <p className="text-sm text-muted-foreground">Si lo dejás vacío, se cobra el total justo (sin vuelto).</p>
+            )}
             {recibidoTexto.trim() !== '' && recibidoCentavos === null && (
               <p className="text-sm text-destructive">El monto no es válido. Usá números, con coma para los centavos.</p>
             )}

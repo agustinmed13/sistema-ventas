@@ -95,12 +95,14 @@ export async function moverStock(tx: Transaccion, datos: DatosMovimiento) {
       // throw: quien llamó está en una transacción, así que se deshace
       // TODO lo que ya se había hecho (la factura, otros renglones...).
       // 409 porque choca con el estado actual de los datos (sección 11.8).
-      const detalle = `Disponible: ${producto.existencia}, solicitado: ${cantidadAbsoluta}.`;
+      // details con el formato de AGENTS.md 5.1: productoId, solicitado
+      // y disponible.
       throw new ApiError(
         409,
         'STOCK_INSUFICIENTE',
-        `No hay stock suficiente para ${producto.descripcion}. ${detalle}`,
-        [{ campo: 'cantidad', mensaje: detalle }]
+        `No hay stock suficiente para ${producto.descripcion}. ` +
+          `Disponible: ${producto.existencia}, solicitado: ${cantidadAbsoluta}.`,
+        [{ productoId: datos.productoId, solicitado: cantidadAbsoluta, disponible: producto.existencia }]
       );
     }
   } else {

@@ -49,13 +49,14 @@ export async function GET(request: Request) {
     // "|| null" hace que un parámetro vacío (?formaPago=) cuente como
     // si no hubiera venido. Validarlos es trabajo del servicio.
     const parametros = new URL(request.url).searchParams;
+    // Nombres de los filtros según la consigna 11.6 (AGENTS.md 5.1)
     const resultado = await listarFacturas(usuario, {
+      q: parametros.get('q') || null,
       desde: parametros.get('desde') || null,
       hasta: parametros.get('hasta') || null,
       clienteId: parametros.get('clienteId') || null,
-      formaPago: parametros.get('formaPago') || null,
-      usuarioId: parametros.get('usuarioId') || null,
-      numero: parametros.get('numero') || null,
+      vendedorId: parametros.get('vendedorId') || null,
+      forma: parametros.get('forma') || null,
       estado: parametros.get('estado') || null,
       page: parametros.get('page') || null,
       pageSize: parametros.get('pageSize') || null,

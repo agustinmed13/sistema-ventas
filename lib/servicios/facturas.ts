@@ -12,24 +12,76 @@
 //   listarFacturas  RF-V8
 //   obtenerFactura  RF-V7
 //   anularFactura   RF-V9
+//
+// NOMBRES DE CAMPO (AGENTS.md 5.1, consigna 11.6): la API usa los nombres
+// exactos de la consigna (total, precioUnitario, vendedor, pago.forma...),
+// que NO son los de las columnas de la base (total_centavos, usuario_id,
+// forma_pago...). Este servicio traduce: lee con los nombres de la base y
+// devuelve con los de la consigna. Los importes siguen siendo centavos
+// enteros; solo cambia el nombre del campo.
 
-import { eq, and, gte, lt, inArray, max, desc, count, type SQL } from 'drizzle-orm';
+import { eq, and, or, gte, lt, like, inArray, max, desc, count, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { usuarios, clientes, productos, facturas, facturaItems, movimientosCuenta } from '@/db/schema';
 import { ApiError } from '@/lib/errores';
+import { formatearNumeroFactura } from '@/lib/formato';
 import { moverStock } from '@/lib/servicios/stock';
 
 // El usuario que hizo el pedido (lo que devuelve obtenerUsuarioActual)
 export type UsuarioSesion = { id: number; nombre: string; rol: 'admin' | 'vendedor' };
 
+// ─────────────────────────────────────────────────────────────
+// La factura completa, tal como la devuelve la API (consigna 11.6).
+// La usan el POST, el detalle, la anulación y las pantallas.
+// ─────────────────────────────────────────────────────────────
+export type FacturaCompleta = {
+  id: number;
+  puntoVenta: number;
+  numero: number; // ENTERO: 1233
+  numeroFormateado: string; // texto: "0001-00001233"
+  fecha: string;
+  estado: 'emitida' | 'anulada';
+  cliente: {
+    id: number;
+    nombre: string;
+    tipoDoc: 'DNI' | 'CUIT';
+    nroDoc: string;
+    domicilio: string | null;
+  } | null; // null = consumidor final
+  vendedor: { id: number; nombre: string };
+  items: {
+    productoId: number;
+    codigo: string;
+    descripcion: string;
+    cantidad: number;
+    precioUnitario: number;
+    subtotal: number;
+  }[];
+  total: number;
+  // El contenido de "pago" depende de la forma:
+  //   contado          → { forma, montoRecibido, vuelto }
+  //   tarjeta          → { forma, tarjeta: { tipo, marca, ultimos4 } }
+  //   cuenta_corriente → { forma }
+  pago: {
+    forma: 'contado' | 'tarjeta' | 'cuenta_corriente';
+    montoRecibido?: number;
+    vuelto?: number;
+    tarjeta?: { tipo: string | null; marca: string | null; ultimos4: string | null };
+  };
+  saldoCliente?: number; // solo en ventas a cuenta corriente
+  anulacion?: { fecha: string; usuario: { id: number; nombre: string } | null; motivo: string }; // solo si está anulada
+};
+
 // Por ahora hay un solo punto de venta
 const PUNTO_VENTA = 1;
 
-// Los únicos campos que el cliente puede mandar al facturar. Cualquier
-// otro (total, precio, numero, fecha...) se rechaza con 422: los precios,
-// el total, el número y la fecha los asigna el servidor (sección 11.1).
-const CAMPOS_PERMITIDOS = ['clienteId', 'formaPago', 'items', 'montoRecibidoCentavos', 'tarjeta'];
+// Los únicos campos que el cliente puede mandar al facturar (consigna
+// 11.6). Cualquier otro (total, precio, numero, fecha...) se rechaza con
+// 422: los precios, el total, el número y la fecha los asigna el servidor
+// (sección 11.1).
+const CAMPOS_PERMITIDOS = ['clienteId', 'items', 'pago'];
 const CAMPOS_PERMITIDOS_ITEM = ['productoId', 'cantidad'];
+const CAMPOS_PERMITIDOS_PAGO = ['forma', 'montoRecibido', 'tarjeta'];
 const CAMPOS_PERMITIDOS_TARJETA = ['tipo', 'marca', 'ultimos4'];
 
 // Un error 422 VALIDACION sobre un campo, con el formato de "details"
@@ -38,31 +90,43 @@ function errorDeValidacion(campo: string, mensaje: string) {
   return new ApiError(422, 'VALIDACION', mensaje, [{ campo, mensaje }]);
 }
 
-// 1, 42 → "0001-00000042" (regla 4)
-// TEMPORAL: según la sección 6 del AGENTS.md esto va en lib/formato.ts,
-// que todavía no existe. Cuando exista, se usa la de ahí.
-function formatearNumero(puntoVenta: number, numero: number) {
-  // padStart rellena con ceros a la izquierda
-  return String(puntoVenta).padStart(4, '0') + '-' + String(numero).padStart(8, '0');
+// Saldo actual de un cliente (regla 7): débitos − créditos, siempre desde
+// movimientos_cuenta. Recibe tx o db, según quién la llame.
+async function calcularSaldo(conexion: Pick<typeof db, 'select'>, clienteId: number) {
+  const movimientos = await conexion
+    .select()
+    .from(movimientosCuenta)
+    .where(eq(movimientosCuenta.clienteId, clienteId));
+
+  let saldo = 0;
+  for (const mov of movimientos) {
+    if (mov.tipo === 'debito') {
+      saldo = saldo + mov.importeCentavos;
+    } else {
+      saldo = saldo - mov.importeCentavos;
+    }
+  }
+  return saldo;
 }
 
 // ═════════════════════════════════════════════════════════════
 // crearFactura — emitir una factura (RF-V1 a RF-V6)
 //
-// datos (sin validar):
+// datos (sin validar), formato de la consigna 11.6:
 // {
-//   "clienteId": 3,                     // null = consumidor final
-//   "formaPago": "cuenta_corriente",    // contado | tarjeta | cuenta_corriente
-//   "items": [ { "productoId": 1, "cantidad": 2 } ],
-//   "montoRecibidoCentavos": 2000000,   // solo si es contado
-//   "tarjeta": { "tipo": "credito", "marca": "Visa", "ultimos4": "1234" }
+//   "clienteId": 1,                                   // null = consumidor final
+//   "items": [ { "productoId": 4, "cantidad": 1 } ],
+//   "pago": { "forma": "cuenta_corriente" }
 // }
+//   contado → pago.montoRecibido, OPCIONAL: si falta, se toma el total
+//   tarjeta → pago.tarjeta: { tipo, marca, ultimos4 }
 //
 // El cliente NUNCA manda precios, subtotales, total, número ni fecha.
 // Si pudiera mandar el total, cualquiera compraría por un peso editando
 // el pedido.
 //
 // Pueden facturar admin y vendedor: no hay chequeo de rol.
+// Devuelve la factura completa (FacturaCompleta).
 // ═════════════════════════════════════════════════════════════
 // "any" porque los datos llegan tal cual del JSON, sin validar: el
 // trabajo de esta función es justamente revisarlos campo por campo.
@@ -114,10 +178,20 @@ export async function crearFactura(usuario: UsuarioSesion, datos: any) {
     }
   }
 
-  // --- formaPago ---
-  const formaPago = datos.formaPago;
+  // --- pago ---
+  const pago = datos.pago;
+  if (typeof pago !== 'object' || pago === null || Array.isArray(pago)) {
+    throw errorDeValidacion('pago', 'Hay que indicar el pago, por ejemplo { "forma": "contado" }.');
+  }
+  for (const campo of Object.keys(pago)) {
+    if (!CAMPOS_PERMITIDOS_PAGO.includes(campo)) {
+      throw errorDeValidacion(`pago.${campo}`, `El campo "pago.${campo}" no se puede enviar.`);
+    }
+  }
+
+  const formaPago = pago.forma;
   if (formaPago !== 'contado' && formaPago !== 'tarjeta' && formaPago !== 'cuenta_corriente') {
-    throw errorDeValidacion('formaPago', 'La forma de pago tiene que ser contado, tarjeta o cuenta_corriente.');
+    throw errorDeValidacion('pago.forma', 'La forma de pago tiene que ser contado, tarjeta o cuenta_corriente.');
   }
 
   // --- clienteId --- (null o ausente = consumidor final)
@@ -130,17 +204,15 @@ export async function crearFactura(usuario: UsuarioSesion, datos: any) {
   }
 
   // --- contado: monto recibido ---
-  // Acá solo verificamos que sea un entero positivo. Que alcance para
-  // pagar el total se verifica más abajo, cuando ya tenemos los precios.
-  let montoRecibidoCentavos: number | null = null;
-  if (formaPago === 'contado') {
-    if (!Number.isInteger(datos.montoRecibidoCentavos) || datos.montoRecibidoCentavos <= 0) {
-      throw errorDeValidacion(
-        'montoRecibidoCentavos',
-        'En contado hay que indicar el monto recibido (entero positivo).'
-      );
+  // OPCIONAL (consigna 11.6): si no viene, se asume que pagó justo el
+  // total. Si viene, tiene que ser un entero positivo; que alcance para
+  // pagar se verifica más abajo, cuando ya tenemos los precios.
+  let montoRecibidoInformado: number | null = null;
+  if (formaPago === 'contado' && pago.montoRecibido !== undefined && pago.montoRecibido !== null) {
+    if (!Number.isInteger(pago.montoRecibido) || pago.montoRecibido <= 0) {
+      throw errorDeValidacion('pago.montoRecibido', 'El monto recibido tiene que ser un entero positivo (en centavos).');
     }
-    montoRecibidoCentavos = datos.montoRecibidoCentavos;
+    montoRecibidoInformado = pago.montoRecibido;
   }
 
   // --- tarjeta ---
@@ -148,24 +220,24 @@ export async function crearFactura(usuario: UsuarioSesion, datos: any) {
   // Como solo aceptamos esos tres campos, el número completo no puede entrar.
   let tarjeta: { tipo: 'debito' | 'credito'; marca: string; ultimos4: string } | null = null;
   if (formaPago === 'tarjeta') {
-    const t = datos.tarjeta;
+    const t = pago.tarjeta;
     if (typeof t !== 'object' || t === null) {
-      throw errorDeValidacion('tarjeta', 'En pago con tarjeta hay que indicar los datos de la tarjeta.');
+      throw errorDeValidacion('pago.tarjeta', 'En pago con tarjeta hay que indicar los datos de la tarjeta.');
     }
     for (const campo of Object.keys(t)) {
       if (!CAMPOS_PERMITIDOS_TARJETA.includes(campo)) {
-        throw errorDeValidacion(campo, `El campo "${campo}" no se puede enviar en la tarjeta.`);
+        throw errorDeValidacion(`pago.tarjeta.${campo}`, `El campo "${campo}" no se puede enviar en la tarjeta.`);
       }
     }
     if (t.tipo !== 'debito' && t.tipo !== 'credito') {
-      throw errorDeValidacion('tarjeta.tipo', 'El tipo de tarjeta tiene que ser debito o credito.');
+      throw errorDeValidacion('pago.tarjeta.tipo', 'El tipo de tarjeta tiene que ser debito o credito.');
     }
     if (typeof t.marca !== 'string' || t.marca.trim() === '') {
-      throw errorDeValidacion('tarjeta.marca', 'La marca de la tarjeta es obligatoria.');
+      throw errorDeValidacion('pago.tarjeta.marca', 'La marca de la tarjeta es obligatoria.');
     }
     // /^\d{4}$/ = exactamente 4 dígitos, ni más ni menos
     if (typeof t.ultimos4 !== 'string' || !/^\d{4}$/.test(t.ultimos4)) {
-      throw errorDeValidacion('tarjeta.ultimos4', 'Los últimos 4 dígitos tienen que ser exactamente 4 números.');
+      throw errorDeValidacion('pago.tarjeta.ultimos4', 'Los últimos 4 dígitos tienen que ser exactamente 4 números.');
     }
     tarjeta = { tipo: t.tipo, marca: t.marca.trim(), ultimos4: t.ultimos4 };
   }
@@ -193,7 +265,7 @@ export async function crearFactura(usuario: UsuarioSesion, datos: any) {
   // el throw, deshace todo (rollback) y lo vuelve a lanzar; la ruta lo
   // atrapa y lo convierte en respuesta con manejarError().
   // ═════════════════════════════════════════════════════════
-  return await db.transaction(async (tx) => {
+  const facturaId = await db.transaction(async (tx) => {
     // ─────────────────────────────────────────────────────
     // El cliente (si hay)
     // ─────────────────────────────────────────────────────
@@ -247,14 +319,19 @@ export async function crearFactura(usuario: UsuarioSesion, datos: any) {
       return { producto, cantidad: renglon.cantidad, subtotalCentavos };
     });
 
-    // RF-V5: en contado, lo recibido tiene que alcanzar para pagar
-    if (montoRecibidoCentavos !== null && montoRecibidoCentavos < totalCentavos) {
-      throw new ApiError(422, 'MONTO_INSUFICIENTE', 'El monto recibido no alcanza para pagar el total.', [
-        {
-          campo: 'montoRecibidoCentavos',
-          mensaje: `Total: ${totalCentavos} centavos. Recibido: ${montoRecibidoCentavos} centavos.`,
-        },
-      ]);
+    // RF-V5: en contado, si informó cuánto entregó, tiene que alcanzar.
+    // Si no lo informó, se asume que pagó justo el total (consigna 11.6).
+    let montoRecibidoCentavos: number | null = null;
+    if (formaPago === 'contado') {
+      if (montoRecibidoInformado !== null && montoRecibidoInformado < totalCentavos) {
+        throw new ApiError(422, 'MONTO_INSUFICIENTE', 'El monto recibido no alcanza para pagar el total.', [
+          {
+            campo: 'pago.montoRecibido',
+            mensaje: `Total: ${totalCentavos} centavos. Recibido: ${montoRecibidoInformado} centavos.`,
+          },
+        ]);
+      }
+      montoRecibidoCentavos = montoRecibidoInformado ?? totalCentavos;
     }
 
     // ─────────────────────────────────────────────────────
@@ -262,32 +339,52 @@ export async function crearFactura(usuario: UsuarioSesion, datos: any) {
     // Saldo = débitos − créditos, siempre desde movimientos_cuenta.
     // Si el cliente tiene límite, saldo actual + esta venta no puede
     // superarlo. 422: el pedido está bien formado pero rompe una regla.
+    // details (AGENTS.md 5.1): saldoActual, limite y excedente.
     // ─────────────────────────────────────────────────────
     if (formaPago === 'cuenta_corriente' && cliente && cliente.limiteCreditoCentavos !== null) {
-      const movimientos = await tx
-        .select()
-        .from(movimientosCuenta)
-        .where(eq(movimientosCuenta.clienteId, cliente.id));
+      const saldoActual = await calcularSaldo(tx, cliente.id);
+      const limite = cliente.limiteCreditoCentavos;
 
-      let saldoCentavos = 0;
-      for (const mov of movimientos) {
-        if (mov.tipo === 'debito') {
-          saldoCentavos = saldoCentavos + mov.importeCentavos;
-        } else {
-          saldoCentavos = saldoCentavos - mov.importeCentavos;
-        }
-      }
-
-      if (saldoCentavos + totalCentavos > cliente.limiteCreditoCentavos) {
+      if (saldoActual + totalCentavos > limite) {
         throw new ApiError(422, 'LIMITE_CREDITO_EXCEDIDO', 'La venta supera el límite de crédito del cliente.', [
-          {
-            campo: 'clienteId',
-            mensaje:
-              `Límite: ${cliente.limiteCreditoCentavos} centavos. ` +
-              `Saldo actual: ${saldoCentavos} centavos. Esta venta: ${totalCentavos} centavos.`,
-          },
+          { saldoActual, limite, excedente: saldoActual + totalCentavos - limite },
         ]);
       }
+    }
+
+    // ─────────────────────────────────────────────────────
+    // Stock suficiente para TODOS los renglones (regla 1, RF-V6)
+    //
+    // Antes de tocar nada revisamos todos los productos y juntamos los
+    // que no alcanzan, así el error los lista a TODOS (AGENTS.md 5.1) y
+    // no solo el primero: el vendedor corrige todo de una vez.
+    //
+    // Esta lectura NO reemplaza al UPDATE condicional de moverStock(): es
+    // solo para armar un mensaje completo. Si entre esta lectura y el
+    // descuento otra venta se llevara las unidades, moverStock() igual lo
+    // detecta y corta (punto 4 de la lista de la sección 10.8).
+    // ─────────────────────────────────────────────────────
+    const faltantes: { productoId: number; solicitado: number; disponible: number }[] = [];
+    const nombresFaltantes: string[] = [];
+    for (const renglon of detalle) {
+      if (renglon.producto.existencia < renglon.cantidad) {
+        faltantes.push({
+          productoId: renglon.producto.id,
+          solicitado: renglon.cantidad,
+          disponible: renglon.producto.existencia,
+        });
+        nombresFaltantes.push(
+          `${renglon.producto.descripcion} (hay ${renglon.producto.existencia}, se piden ${renglon.cantidad})`
+        );
+      }
+    }
+    if (faltantes.length > 0) {
+      throw new ApiError(
+        409,
+        'STOCK_INSUFICIENTE',
+        `No hay stock suficiente para: ${nombresFaltantes.join(', ')}.`,
+        faltantes
+      );
     }
 
     // ─────────────────────────────────────────────────────
@@ -302,7 +399,7 @@ export async function crearFactura(usuario: UsuarioSesion, datos: any) {
       .where(eq(facturas.puntoVenta, PUNTO_VENTA));
     const numero = (ultima.maximo ?? 0) + 1; // ?? 0: si no hay facturas, max da null
 
-    const numeroFormateado = formatearNumero(PUNTO_VENTA, numero);
+    const numeroFormateado = formatearNumeroFactura(PUNTO_VENTA, numero);
     const fecha = new Date().toISOString(); // la fecha la pone el servidor
 
     // ─────────────────────────────────────────────────────
@@ -373,72 +470,42 @@ export async function crearFactura(usuario: UsuarioSesion, datos: any) {
       });
     }
 
-    // ─────────────────────────────────────────────────────
-    // El resultado. Lo que devuelve esta función es lo que devuelve
-    // db.transaction. Si llegamos acá sin ningún throw, Drizzle confirma
-    // (commit).
-    // Es la MISMA forma que devuelve obtenerFactura(), así la pantalla
-    // usa una sola estructura para el comprobante.
-    // ─────────────────────────────────────────────────────
-    return {
-      id: factura.id,
-      numero: numeroFormateado,
-      fecha: factura.fecha,
-      estado: factura.estado,
-      // Recién emitida nunca está anulada; van para mantener la forma
-      motivoAnulacion: null,
-      anuladaEn: null,
-      formaPago: factura.formaPago,
-      totalCentavos: factura.totalCentavos,
-      montoRecibidoCentavos: factura.montoRecibidoCentavos,
-      // Vuelto solo en contado
-      vueltoCentavos: montoRecibidoCentavos !== null ? montoRecibidoCentavos - totalCentavos : null,
-      tarjeta: tarjeta,
-      // Para mostrar directo: el nombre, o "Consumidor final"
-      clienteNombre: cliente ? cliente.nombre : 'Consumidor final',
-      cliente: cliente
-        ? {
-            id: cliente.id,
-            nombre: cliente.nombre,
-            tipoDocumento: cliente.tipoDocumento,
-            numeroDocumento: cliente.numeroDocumento,
-          }
-        : null,
-      usuario: { id: usuario.id, nombre: usuario.nombre },
-      items: detalle.map((renglon) => ({
-        productoId: renglon.producto.id,
-        descripcion: renglon.producto.descripcion,
-        cantidad: renglon.cantidad,
-        precioUnitarioCentavos: renglon.producto.precioCentavos,
-        subtotalCentavos: renglon.subtotalCentavos,
-      })),
-    };
+    // Si llegamos acá sin ningún throw, Drizzle confirma (commit).
+    return factura.id;
   });
+
+  // Devolvemos la factura con EXACTAMENTE la misma forma que el detalle
+  // (consigna 11.6), leída después del commit. Así hay un solo lugar que
+  // arma la respuesta: obtenerFactura().
+  return await obtenerFactura(usuario, String(facturaId));
 }
 
 // ═════════════════════════════════════════════════════════════
 // listarFacturas — listado con filtros y paginación (RF-V8)
 //
-// Filtros opcionales y combinables (todos llegan como texto o null):
+// Filtros opcionales y combinables (todos llegan como texto o null),
+// con los nombres de la consigna 11.6:
+//   q              número de comprobante ("42" o "0001-00000042") O
+//                  parte del nombre del cliente
 //   desde, hasta   fechas AAAA-MM-DD (días de Argentina, ambos incluidos)
 //   clienteId      número
-//   formaPago      contado | tarjeta | cuenta_corriente
-//   usuarioId      número (el vendedor que la emitió)
-//   numero         "42" o "0001-00000042"
+//   vendedorId     número (el usuario que la emitió)
+//   forma          contado | tarjeta | cuenta_corriente
 //   estado         emitida | anulada
 //   page           desde 1 (por defecto 1)
 //   pageSize       de 1 a 100 (por defecto 20)
 //
-// Devuelve { data, page, pageSize, total } (sección 11.1).
+// Devuelve { data, page, pageSize, total, totalEmitido } (sección 11.1
+// más totalEmitido de la 11.6).
 // Los dos roles pueden consultar: no hay chequeo de rol.
 // ═════════════════════════════════════════════════════════════
 type FiltrosFacturas = {
+  q: string | null;
   desde: string | null;
   hasta: string | null;
   clienteId: string | null;
-  formaPago: string | null;
-  usuarioId: string | null;
-  numero: string | null;
+  vendedorId: string | null;
+  forma: string | null;
   estado: string | null;
   page: string | null;
   pageSize: string | null;
@@ -449,6 +516,24 @@ export async function listarFacturas(usuario: UsuarioSesion, filtros: FiltrosFac
   // Al final se combinan todas con AND. Si no vino ninguno, la lista
   // queda vacía y se devuelven todas las facturas.
   const condiciones: SQL[] = [];
+
+  // --- q: número O nombre del cliente ---
+  // Siempre busca en el nombre del cliente (sin distinguir mayúsculas).
+  // Si además el texto parece un número ("42" o "0001-00000042"), busca
+  // también por número de comprobante. Las dos opciones se unen con OR.
+  if (filtros.q !== null) {
+    const texto = filtros.q.trim();
+    const opciones: SQL[] = [like(sql`lower(${clientes.nombre})`, `%${texto.toLowerCase()}%`)];
+
+    // Nos quedamos con lo que está después del último guion: "00000042" → 42
+    const partes = texto.split('-');
+    const n = Number(partes[partes.length - 1]);
+    if (Number.isInteger(n) && n > 0) {
+      opciones.push(eq(facturas.numero, n));
+    }
+    // El "!" es seguro: "opciones" siempre tiene al menos un elemento
+    condiciones.push(or(...opciones)!);
+  }
 
   // --- Fechas ---
   // Las fechas se guardan en UTC (hora de Londres), pero el usuario
@@ -488,34 +573,22 @@ export async function listarFacturas(usuario: UsuarioSesion, filtros: FiltrosFac
     condiciones.push(eq(facturas.clienteId, id));
   }
 
-  // --- formaPago ---
-  const formaPago = filtros.formaPago;
-  if (formaPago !== null) {
-    if (formaPago !== 'contado' && formaPago !== 'tarjeta' && formaPago !== 'cuenta_corriente') {
-      throw errorDeValidacion('formaPago', 'La forma de pago tiene que ser contado, tarjeta o cuenta_corriente.');
-    }
-    condiciones.push(eq(facturas.formaPago, formaPago));
-  }
-
-  // --- usuarioId (vendedor) ---
-  if (filtros.usuarioId !== null) {
-    const id = Number(filtros.usuarioId);
+  // --- vendedorId ---
+  if (filtros.vendedorId !== null) {
+    const id = Number(filtros.vendedorId);
     if (!Number.isInteger(id) || id <= 0) {
-      throw errorDeValidacion('usuarioId', 'El usuarioId no es válido.');
+      throw errorDeValidacion('vendedorId', 'El vendedorId no es válido.');
     }
     condiciones.push(eq(facturas.usuarioId, id));
   }
 
-  // --- numero ---
-  // Acepta "42" o "0001-00000042". Nos quedamos con lo que está después
-  // del último guion y lo pasamos a número: "00000042" → 42.
-  if (filtros.numero !== null) {
-    const partes = filtros.numero.trim().split('-');
-    const n = Number(partes[partes.length - 1]);
-    if (!Number.isInteger(n) || n <= 0) {
-      throw errorDeValidacion('numero', 'El número de comprobante no es válido.');
+  // --- forma (de pago) ---
+  const forma = filtros.forma;
+  if (forma !== null) {
+    if (forma !== 'contado' && forma !== 'tarjeta' && forma !== 'cuenta_corriente') {
+      throw errorDeValidacion('forma', 'La forma de pago tiene que ser contado, tarjeta o cuenta_corriente.');
     }
-    condiciones.push(eq(facturas.numero, n));
+    condiciones.push(eq(facturas.formaPago, forma));
   }
 
   // --- estado ---
@@ -544,12 +617,21 @@ export async function listarFacturas(usuario: UsuarioSesion, filtros: FiltrosFac
     }
   }
 
-  // --- El total: cuántas facturas cumplen los filtros, sin paginar ---
-  // count() = "SELECT COUNT(*)". La pantalla lo usa para saber cuántas
-  // páginas hay.
-  const [conteo] = await db
-    .select({ total: count() })
+  // --- Totales: cuántas facturas cumplen los filtros, y cuánto suman
+  //     las EMITIDAS (las anuladas no cuentan como venta) ---
+  // count() = "SELECT COUNT(*)".
+  // CASE WHEN ... THEN ... ELSE 0 END = "si está emitida, sumá su total;
+  //   si no, sumá 0". coalesce(..., 0): si no hay ninguna, da 0 y no null.
+  // El JOIN con clientes hace falta porque el filtro q busca en su nombre.
+  const [totales] = await db
+    .select({
+      total: count(),
+      totalEmitido: sql<number>`coalesce(sum(case when ${facturas.estado} = 'emitida' then ${facturas.totalCentavos} else 0 end), 0)`.mapWith(
+        Number
+      ),
+    })
     .from(facturas)
+    .leftJoin(clientes, eq(facturas.clienteId, clientes.id))
     .where(and(...condiciones));
 
   // --- La página pedida ---
@@ -558,20 +640,14 @@ export async function listarFacturas(usuario: UsuarioSesion, filtros: FiltrosFac
   //     consumidor final no tiene cliente (clienteId null): sin LEFT,
   //     esas facturas desaparecerían del listado.
   //   innerJoin usuarios: trae el nombre del vendedor. Toda factura
-  //     tiene vendedor. Del usuario pedimos SOLO el nombre.
+  //     tiene vendedor. Del usuario pedimos SOLO id y nombre.
   // limit = cuántas traer; offset = cuántas saltear.
   //   page 1 → saltea 0;  page 2 → saltea 20;  page 3 → saltea 40
   const filas = await db
     .select({
-      id: facturas.id,
-      puntoVenta: facturas.puntoVenta,
-      numero: facturas.numero,
-      fecha: facturas.fecha,
-      estado: facturas.estado,
-      formaPago: facturas.formaPago,
-      totalCentavos: facturas.totalCentavos,
-      clienteNombre: clientes.nombre,
-      vendedorNombre: usuarios.nombre,
+      factura: facturas,
+      cliente: { id: clientes.id, nombre: clientes.nombre },
+      vendedor: { id: usuarios.id, nombre: usuarios.nombre },
     })
     .from(facturas)
     .leftJoin(clientes, eq(facturas.clienteId, clientes.id))
@@ -582,26 +658,31 @@ export async function listarFacturas(usuario: UsuarioSesion, filtros: FiltrosFac
     .limit(pageSize)
     .offset((page - 1) * pageSize);
 
+  // Cada factura del listado, con los mismos nombres de campo que el
+  // detalle (consigna 11.6), pero sin ítems.
   const data = filas.map((f) => ({
-    id: f.id,
-    numero: formatearNumero(f.puntoVenta, f.numero),
-    fecha: f.fecha,
-    estado: f.estado,
-    formaPago: f.formaPago,
-    totalCentavos: f.totalCentavos,
-    clienteNombre: f.clienteNombre ?? 'Consumidor final', // ?? = "si es null, usá esto"
-    vendedorNombre: f.vendedorNombre,
+    id: f.factura.id,
+    puntoVenta: f.factura.puntoVenta,
+    numero: f.factura.numero,
+    numeroFormateado: formatearNumeroFactura(f.factura.puntoVenta, f.factura.numero),
+    fecha: f.factura.fecha,
+    estado: f.factura.estado,
+    cliente: f.cliente, // null = consumidor final
+    vendedor: f.vendedor,
+    total: f.factura.totalCentavos,
+    pago: { forma: f.factura.formaPago },
   }));
 
-  return { data, page, pageSize, total: conteo.total };
+  return { data, page, pageSize, total: totales.total, totalEmitido: totales.totalEmitido };
 }
 
 // ═════════════════════════════════════════════════════════════
 // obtenerFactura — el comprobante completo (RF-V7)
 //
 // id llega como texto desde la URL. Los dos roles pueden consultar.
+// Devuelve la forma de la consigna 11.6 (FacturaCompleta).
 // ═════════════════════════════════════════════════════════════
-export async function obtenerFactura(usuario: UsuarioSesion, id: string) {
+export async function obtenerFactura(usuario: UsuarioSesion, id: string): Promise<FacturaCompleta> {
   // Si no es un número entero positivo ("abc", "1.5"), esa factura no
   // puede existir: 404.
   const facturaId = Number(id);
@@ -624,6 +705,7 @@ export async function obtenerFactura(usuario: UsuarioSesion, id: string) {
         nombre: clientes.nombre,
         tipoDocumento: clientes.tipoDocumento,
         numeroDocumento: clientes.numeroDocumento,
+        domicilio: clientes.domicilio,
       },
       vendedor: { id: usuarios.id, nombre: usuarios.nombre },
     })
@@ -641,55 +723,90 @@ export async function obtenerFactura(usuario: UsuarioSesion, id: string) {
   // ─────────────────────────────────────────────────────────
   // Los renglones. Descripción y precio salen de factura_items, que
   // guarda la COPIA del momento de la venta (regla 3), no del
-  // catálogo actual.
+  // catálogo actual. El código sí sale del producto (la factura no lo
+  // copia): por eso el JOIN con productos.
   // ─────────────────────────────────────────────────────────
   const items = await db
-    .select()
+    .select({ item: facturaItems, codigo: productos.codigo })
     .from(facturaItems)
+    .innerJoin(productos, eq(facturaItems.productoId, productos.id))
     .where(eq(facturaItems.facturaId, factura.id))
     .orderBy(facturaItems.id);
 
   // ─────────────────────────────────────────────────────────
-  // El resultado. Es la MISMA forma que devuelve crearFactura().
+  // El pago, según la forma (consigna 11.6)
   // ─────────────────────────────────────────────────────────
-  let vueltoCentavos = null;
-  if (factura.formaPago === 'contado' && factura.montoRecibidoCentavos !== null) {
-    vueltoCentavos = factura.montoRecibidoCentavos - factura.totalCentavos;
+  let pago: FacturaCompleta['pago'];
+  if (factura.formaPago === 'contado') {
+    // Las facturas viejas siempre tienen monto; por las dudas, si falta,
+    // se toma el total (pagó justo)
+    const montoRecibido = factura.montoRecibidoCentavos ?? factura.totalCentavos;
+    pago = { forma: 'contado', montoRecibido, vuelto: montoRecibido - factura.totalCentavos };
+  } else if (factura.formaPago === 'tarjeta') {
+    pago = {
+      forma: 'tarjeta',
+      tarjeta: { tipo: factura.tarjetaTipo, marca: factura.tarjetaMarca, ultimos4: factura.tarjetaUltimos4 },
+    };
+  } else {
+    pago = { forma: 'cuenta_corriente' };
   }
 
-  let tarjeta = null;
-  if (factura.formaPago === 'tarjeta') {
-    tarjeta = {
-      tipo: factura.tarjetaTipo,
-      marca: factura.tarjetaMarca,
-      ultimos4: factura.tarjetaUltimos4,
+  // ─────────────────────────────────────────────────────────
+  // El resultado, con los nombres de la consigna 11.6
+  // ─────────────────────────────────────────────────────────
+  const resultado: FacturaCompleta = {
+    id: factura.id,
+    puntoVenta: factura.puntoVenta,
+    numero: factura.numero,
+    numeroFormateado: formatearNumeroFactura(factura.puntoVenta, factura.numero),
+    fecha: factura.fecha,
+    estado: factura.estado,
+    cliente: fila.cliente
+      ? {
+          id: fila.cliente.id,
+          nombre: fila.cliente.nombre,
+          tipoDoc: fila.cliente.tipoDocumento,
+          nroDoc: fila.cliente.numeroDocumento, // sin puntos: la pantalla lo formatea
+          domicilio: fila.cliente.domicilio,
+        }
+      : null,
+    vendedor: fila.vendedor,
+    items: items.map((fila) => ({
+      productoId: fila.item.productoId,
+      codigo: fila.codigo,
+      descripcion: fila.item.descripcion,
+      cantidad: fila.item.cantidad,
+      precioUnitario: fila.item.precioUnitarioCentavos,
+      subtotal: fila.item.subtotalCentavos,
+    })),
+    total: factura.totalCentavos,
+    pago,
+  };
+
+  // saldoCliente: SOLO en ventas a cuenta corriente. Es el saldo ACTUAL
+  // del cliente (regla 7), calculado desde movimientos_cuenta.
+  if (factura.formaPago === 'cuenta_corriente' && factura.clienteId !== null) {
+    resultado.saldoCliente = await calcularSaldo(db, factura.clienteId);
+  }
+
+  // anulacion: SOLO si está anulada, con fecha, quién y por qué (RF-V9)
+  if (factura.estado === 'anulada') {
+    let quienAnulo = null;
+    if (factura.anuladaPorId !== null) {
+      const [u] = await db
+        .select({ id: usuarios.id, nombre: usuarios.nombre })
+        .from(usuarios)
+        .where(eq(usuarios.id, factura.anuladaPorId));
+      quienAnulo = u ?? null;
+    }
+    resultado.anulacion = {
+      fecha: factura.anuladaEn ?? '',
+      usuario: quienAnulo,
+      motivo: factura.motivoAnulacion ?? '',
     };
   }
 
-  return {
-    id: factura.id,
-    numero: formatearNumero(factura.puntoVenta, factura.numero),
-    fecha: factura.fecha,
-    estado: factura.estado,
-    // Solo tienen valor si está anulada; si no, vienen null
-    motivoAnulacion: factura.motivoAnulacion,
-    anuladaEn: factura.anuladaEn,
-    formaPago: factura.formaPago,
-    totalCentavos: factura.totalCentavos,
-    montoRecibidoCentavos: factura.montoRecibidoCentavos,
-    vueltoCentavos,
-    tarjeta,
-    clienteNombre: fila.cliente ? fila.cliente.nombre : 'Consumidor final',
-    cliente: fila.cliente,
-    usuario: fila.vendedor,
-    items: items.map((item) => ({
-      productoId: item.productoId,
-      descripcion: item.descripcion,
-      cantidad: item.cantidad,
-      precioUnitarioCentavos: item.precioUnitarioCentavos,
-      subtotalCentavos: item.subtotalCentavos,
-    })),
-  };
+  return resultado;
 }
 
 // ═════════════════════════════════════════════════════════════
@@ -752,7 +869,7 @@ export async function anularFactura(usuario: UsuarioSesion, id: string, datos: a
       throw new ApiError(404, 'NO_ENCONTRADO', 'La factura no existe.');
     }
 
-    const numeroFormateado = formatearNumero(factura.puntoVenta, factura.numero);
+    const numeroFormateado = formatearNumeroFactura(factura.puntoVenta, factura.numero);
 
     // ─────────────────────────────────────────────────────
     // No anular dos veces
@@ -840,7 +957,7 @@ export async function anularFactura(usuario: UsuarioSesion, id: string, datos: a
   });
 
   // Devolvemos la factura ya anulada con EXACTAMENTE la misma forma que
-  // el detalle (con estado 'anulada', motivo y fecha). Se lee después
-  // del commit, así trae los datos ya confirmados.
+  // el detalle (con su "anulacion"). Se lee después del commit, así trae
+  // los datos ya confirmados.
   return await obtenerFactura(usuario, id);
 }
