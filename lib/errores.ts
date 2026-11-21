@@ -63,6 +63,15 @@ export type StatusError = 400 | 401 | 403 | 404 | 409 | 422 | 500;
 // Un elemento de "details": qué campo falló y por qué
 export type DetalleError = { campo: string; mensaje: string };
 
+// Algunos errores llevan otros datos en "details" (AGENTS.md 5.1,
+// consigna 11.6). Por ejemplo:
+//   STOCK_INSUFICIENTE      → [{ productoId, solicitado, disponible }, ...]
+//   LIMITE_CREDITO_EXCEDIDO → [{ saldoActual, limite, excedente }]
+export type DetalleDatos = { [clave: string]: string | number | null };
+
+// Lo que puede ir en cada elemento de "details"
+export type Detalle = DetalleError | DetalleDatos;
+
 // ─────────────────────────────────────────────────────────────
 // ApiError — la ÚNICA clase de error que lanzan los servicios (sección 10.4)
 //
@@ -72,9 +81,9 @@ export type DetalleError = { campo: string; mensaje: string };
 export class ApiError extends Error {
   status: StatusError;
   code: CodigoError;
-  details?: DetalleError[];
+  details?: Detalle[];
 
-  constructor(status: StatusError, code: CodigoError, message: string, details?: DetalleError[]) {
+  constructor(status: StatusError, code: CodigoError, message: string, details?: Detalle[]) {
     super(message); // guarda el mensaje en this.message, como cualquier Error
     this.name = 'ApiError';
     this.status = status;
@@ -87,7 +96,7 @@ export class ApiError extends Error {
 // Convierte un ApiError en la respuesta HTTP con el formato de la 11.1
 // ─────────────────────────────────────────────────────────────
 export function respuestaDeError(error: ApiError) {
-  const cuerpo: { code: CodigoError; message: string; details?: DetalleError[] } = {
+  const cuerpo: { code: CodigoError; message: string; details?: Detalle[] } = {
     code: error.code,
     message: error.message,
   };

@@ -8,8 +8,10 @@
 //
 // Los filtros y la página NO se guardan en useState: viven en la URL
 // (consigna 10.6). Ejemplo:
-//   /ventas?formaPago=contado&desde=2026-11-01&page=2
+//   /ventas?forma=contado&desde=2026-11-01&page=2
 // Así el listado se puede recargar (F5) o compartir el link y se ve igual.
+// Los nombres de los parámetros son los de la consigna 11.6: q, desde,
+// hasta, clienteId, vendedorId, forma, estado, page y pageSize.
 
 import { Suspense } from 'react';
 import Link from 'next/link';
@@ -28,12 +30,12 @@ import { InsigniaEstado, nombreFormaPago } from './etiquetas';
 type ParametrosURL = { [clave: string]: string | string[] | undefined };
 
 type Filtros = {
+  q: string | null;
   desde: string | null;
   hasta: string | null;
   clienteId: string | null;
-  formaPago: string | null;
-  usuarioId: string | null;
-  numero: string | null;
+  vendedorId: string | null;
+  forma: string | null;
   estado: string | null;
   page: string | null;
   pageSize: string | null;
@@ -49,12 +51,12 @@ function leer(valor: string | string[] | undefined): string | null {
 // Arma la URL de otra página conservando los filtros actuales
 function urlDePagina(filtros: Filtros, page: number) {
   const parametros = new URLSearchParams();
+  if (filtros.q) parametros.set('q', filtros.q);
   if (filtros.desde) parametros.set('desde', filtros.desde);
   if (filtros.hasta) parametros.set('hasta', filtros.hasta);
   if (filtros.clienteId) parametros.set('clienteId', filtros.clienteId);
-  if (filtros.formaPago) parametros.set('formaPago', filtros.formaPago);
-  if (filtros.usuarioId) parametros.set('usuarioId', filtros.usuarioId);
-  if (filtros.numero) parametros.set('numero', filtros.numero);
+  if (filtros.vendedorId) parametros.set('vendedorId', filtros.vendedorId);
+  if (filtros.forma) parametros.set('forma', filtros.forma);
   if (filtros.estado) parametros.set('estado', filtros.estado);
   if (filtros.pageSize) parametros.set('pageSize', filtros.pageSize);
   parametros.set('page', String(page));
@@ -73,12 +75,12 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
   const parametros = await searchParams;
 
   const filtros: Filtros = {
+    q: leer(parametros.q),
     desde: leer(parametros.desde),
     hasta: leer(parametros.hasta),
     clienteId: leer(parametros.clienteId),
-    formaPago: leer(parametros.formaPago),
-    usuarioId: leer(parametros.usuarioId),
-    numero: leer(parametros.numero),
+    vendedorId: leer(parametros.vendedorId),
+    forma: leer(parametros.forma),
     estado: leer(parametros.estado),
     page: leer(parametros.page),
     pageSize: leer(parametros.pageSize),
@@ -101,10 +103,23 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
       {/* ─── Filtros (RF-V8) ───
           <Form> de Next.js es un <form> que, al enviarse, navega a
           action + los campos como parámetros:
-            /ventas?desde=2026-11-01&hasta=&formaPago=contado&estado=&numero=
+            /ventas?q=gonzalez&desde=2026-11-01&hasta=&forma=contado&estado=
           No hace falta JavaScript propio ni useState: la URL es el estado.
           Como no lleva el campo "page", filtrar siempre vuelve a la página 1. */}
       <Form action="/ventas" className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="col-span-2 space-y-1 sm:col-span-3 lg:col-span-1">
+          <label htmlFor="q" className="text-xs font-medium text-muted-foreground">
+            Número o cliente
+          </label>
+          <input
+            id="q"
+            name="q"
+            type="text"
+            placeholder="42 o González"
+            defaultValue={filtros.q ?? ''}
+            className={claseCampo}
+          />
+        </div>
         <div className="space-y-1">
           <label htmlFor="desde" className="text-xs font-medium text-muted-foreground">
             Desde
@@ -119,10 +134,10 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
           <input id="hasta" name="hasta" type="date" defaultValue={filtros.hasta ?? ''} className={claseCampo} />
         </div>
         <div className="space-y-1">
-          <label htmlFor="formaPago" className="text-xs font-medium text-muted-foreground">
+          <label htmlFor="forma" className="text-xs font-medium text-muted-foreground">
             Forma de pago
           </label>
-          <select id="formaPago" name="formaPago" defaultValue={filtros.formaPago ?? ''} className={claseCampo}>
+          <select id="forma" name="forma" defaultValue={filtros.forma ?? ''} className={claseCampo}>
             <option value="">Todas</option>
             <option value="contado">Contado</option>
             <option value="tarjeta">Tarjeta</option>
@@ -139,23 +154,12 @@ export default async function VentasPage({ searchParams }: { searchParams: Promi
             <option value="anulada">Anulada</option>
           </select>
         </div>
-        <div className="space-y-1">
-          <label htmlFor="numero" className="text-xs font-medium text-muted-foreground">
-            Número
-          </label>
-          <input
-            id="numero"
-            name="numero"
-            type="text"
-            inputMode="numeric"
-            placeholder="42 o 0001-00000042"
-            defaultValue={filtros.numero ?? ''}
-            className={claseCampo}
-          />
-        </div>
-        {/* Si en la URL hay un pageSize, lo conservamos al filtrar */}
+        {/* Los filtros que no tienen campo en pantalla (cliente, vendedor,
+            tamaño de página) se conservan si ya estaban en la URL */}
+        {filtros.clienteId && <input type="hidden" name="clienteId" value={filtros.clienteId} />}
+        {filtros.vendedorId && <input type="hidden" name="vendedorId" value={filtros.vendedorId} />}
         {filtros.pageSize && <input type="hidden" name="pageSize" value={filtros.pageSize} />}
-        <div className="col-span-2 flex items-end gap-2 sm:col-span-3 lg:col-span-1">
+        <div className="flex items-end gap-2 sm:col-span-1">
           <Button type="submit" className="flex-1">
             Filtrar
           </Button>
@@ -227,7 +231,7 @@ async function TablaFacturas({ filtros }: { filtros: Filtros }) {
   }
 
   // ─── Paginado (RF-V8, sección 11.1) ───
-  const { page, pageSize, total } = resultado;
+  const { page, pageSize, total, totalEmitido } = resultado;
   const totalPaginas = Math.ceil(total / pageSize);
   const primera = (page - 1) * pageSize + 1; // "Mostrando 21–40 de 137"
   const ultima = primera + resultado.data.length - 1;
@@ -256,19 +260,19 @@ async function TablaFacturas({ filtros }: { filtros: Filtros }) {
                 <td className="px-3 py-2 font-mono">
                   {/* Cada fila lleva a su comprobante */}
                   <Link href={`/ventas/${f.id}`} className="font-medium text-primary hover:underline">
-                    {/* El número llega ya formateado del servicio */}
-                    {f.numero}
+                    {f.numeroFormateado}
                   </Link>
                 </td>
                 <td className="hidden whitespace-nowrap px-3 py-2 sm:table-cell">{formatearFechaHora(f.fecha)}</td>
-                <td className="px-3 py-2">{f.clienteNombre}</td>
-                <td className="hidden px-3 py-2 md:table-cell">{nombreFormaPago(f.formaPago)}</td>
+                {/* cliente null = consumidor final */}
+                <td className="px-3 py-2">{f.cliente ? f.cliente.nombre : 'Consumidor final'}</td>
+                <td className="hidden px-3 py-2 md:table-cell">{nombreFormaPago(f.pago.forma)}</td>
                 <td
                   className={`whitespace-nowrap px-3 py-2 text-right font-medium ${
                     f.estado === 'anulada' ? 'line-through' : ''
                   }`}
                 >
-                  {formatearImporte(f.totalCentavos)}
+                  {formatearImporte(f.total)}
                 </td>
                 <td className="px-3 py-2">
                   <InsigniaEstado estado={f.estado} />
@@ -280,9 +284,16 @@ async function TablaFacturas({ filtros }: { filtros: Filtros }) {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <p className="text-muted-foreground">
-          Mostrando {primera}–{ultima} de {total} · Página {page} de {totalPaginas}
-        </p>
+        <div className="text-muted-foreground">
+          <p>
+            Mostrando {primera}–{ultima} de {total} · Página {page} de {totalPaginas}
+          </p>
+          {/* totalEmitido (consigna 11.6): suma de las EMITIDAS que cumplen
+              los filtros, de todas las páginas. Las anuladas no suman. */}
+          <p>
+            Total emitido: <span className="font-medium text-foreground">{formatearImporte(totalEmitido)}</span>
+          </p>
+        </div>
         <div className="flex gap-2">
           {/* Anterior y Siguiente son links a la misma página con otro
               "page" en la URL. En la primera o la última, se deshabilitan. */}

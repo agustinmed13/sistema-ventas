@@ -3,6 +3,10 @@
 // SERVER COMPONENT: se ejecuta en el servidor y llama directo al servicio
 // obtenerFactura(), sin pasar por la API (consigna 10.6).
 // Solo el botón de anular es Client Component (boton-anular.tsx).
+//
+// Los campos tienen los nombres de la consigna 11.6 (AGENTS.md 5.1):
+// numeroFormateado, vendedor, cliente.tipoDoc, items[].precioUnitario,
+// total, pago.forma, saldoCliente, anulacion...
 
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -43,6 +47,7 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
   }
 
   const anulada = factura.estado === 'anulada';
+  const pago = factura.pago;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -59,27 +64,33 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
             sigue emitida. Es COMODIDAD VISUAL: el permiso real lo verifica
             el servidor, que responde 403 a un vendedor aunque llame
             directo a la ruta (ver el comentario en boton-anular.tsx). */}
-        {usuario.rol === 'admin' && !anulada && <BotonAnular facturaId={factura.id} numero={factura.numero} />}
+        {usuario.rol === 'admin' && !anulada && (
+          <BotonAnular facturaId={factura.id} numero={factura.numeroFormateado} />
+        )}
       </div>
 
-      {/* ─── Cartel de anulada (RF-V9) ─── */}
-      {anulada && (
+      {/* ─── Cartel de anulada (RF-V9) ───
+          "anulacion" solo viene si la factura está anulada */}
+      {factura.anulacion && (
         <div className="rounded-xl border-2 border-destructive bg-destructive/5 p-4 text-destructive">
           <p className="text-lg font-semibold">FACTURA ANULADA</p>
-          {factura.anuladaEn && <p className="text-sm">Anulada el {formatearFechaHora(factura.anuladaEn)}</p>}
-          <p className="text-sm">Motivo: {factura.motivoAnulacion}</p>
+          <p className="text-sm">
+            Anulada el {formatearFechaHora(factura.anulacion.fecha)}
+            {factura.anulacion.usuario && <> por {factura.anulacion.usuario.nombre}</>}
+          </p>
+          <p className="text-sm">Motivo: {factura.anulacion.motivo}</p>
         </div>
       )}
 
       {/* ─── El comprobante ───
-          print:border-0 print:shadow-none: en papel sin el recuadro */}
+          print:border-0: en papel sin el recuadro */}
       <article className="space-y-6 rounded-xl border bg-card p-4 sm:p-6 print:border-0 print:p-0">
         {/* Cabecera */}
         <header className="flex flex-wrap items-start justify-between gap-2 border-b pb-4">
           <div>
             <p className="text-sm text-muted-foreground">Factura</p>
-            {/* El número llega ya formateado del servicio: 0001-00000053 */}
-            <h1 className="font-mono text-2xl font-semibold">{factura.numero}</h1>
+            {/* numeroFormateado = el texto "0001-00000053" (numero es el entero) */}
+            <h1 className="font-mono text-2xl font-semibold">{factura.numeroFormateado}</h1>
           </div>
           <InsigniaEstado estado={factura.estado} />
         </header>
@@ -92,16 +103,21 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
           </div>
           <div>
             <dt className="text-muted-foreground">Vendedor</dt>
-            <dd className="font-medium">{factura.usuario.nombre}</dd>
+            <dd className="font-medium">{factura.vendedor.nombre}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Comprador</dt>
-            <dd className="font-medium">{factura.clienteNombre}</dd>
-            {/* Consumidor final no tiene documento */}
-            {factura.cliente && (
-              <dd className="text-muted-foreground">
-                {formatearDocumento(factura.cliente.tipoDocumento, factura.cliente.numeroDocumento)}
-              </dd>
+            {/* cliente null = consumidor final, que no tiene documento */}
+            {factura.cliente ? (
+              <>
+                <dd className="font-medium">{factura.cliente.nombre}</dd>
+                <dd className="text-muted-foreground">
+                  {formatearDocumento(factura.cliente.tipoDoc, factura.cliente.nroDoc)}
+                </dd>
+                {factura.cliente.domicilio && <dd className="text-muted-foreground">{factura.cliente.domicilio}</dd>}
+              </>
+            ) : (
+              <dd className="font-medium">Consumidor final</dd>
             )}
           </div>
         </dl>
@@ -121,12 +137,13 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
             <tbody className="divide-y">
               {factura.items.map((item) => (
                 <tr key={item.productoId}>
-                  <td className="py-2 pr-2">{item.descripcion}</td>
-                  <td className="px-2 py-2 text-right">{item.cantidad}</td>
-                  <td className="whitespace-nowrap px-2 py-2 text-right">
-                    {formatearImporte(item.precioUnitarioCentavos)}
+                  <td className="py-2 pr-2">
+                    <span className="block text-xs text-muted-foreground">{item.codigo}</span>
+                    {item.descripcion}
                   </td>
-                  <td className="whitespace-nowrap py-2 pl-2 text-right">{formatearImporte(item.subtotalCentavos)}</td>
+                  <td className="px-2 py-2 text-right">{item.cantidad}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-right">{formatearImporte(item.precioUnitario)}</td>
+                  <td className="whitespace-nowrap py-2 pl-2 text-right">{formatearImporte(item.subtotal)}</td>
                 </tr>
               ))}
             </tbody>
@@ -136,45 +153,55 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
                   Total
                 </td>
                 <td className="whitespace-nowrap py-3 pl-2 text-right text-lg font-semibold">
-                  {formatearImporte(factura.totalCentavos)}
+                  {formatearImporte(factura.total)}
                 </td>
               </tr>
             </tfoot>
           </table>
         </div>
 
-        {/* Forma de pago (RF-V5) — lo que se muestra depende de cuál fue */}
+        {/* Forma de pago (RF-V5) — lo que trae "pago" depende de la forma */}
         <section className="space-y-1 rounded-lg bg-muted p-4 text-sm">
           <p>
             <span className="text-muted-foreground">Forma de pago: </span>
-            <span className="font-medium">{nombreFormaPago(factura.formaPago)}</span>
+            <span className="font-medium">{nombreFormaPago(pago.forma)}</span>
           </p>
 
-          {factura.formaPago === 'contado' && factura.montoRecibidoCentavos !== null && (
+          {pago.forma === 'contado' && pago.montoRecibido !== undefined && (
             <>
               <p>
                 <span className="text-muted-foreground">Recibido: </span>
-                {formatearImporte(factura.montoRecibidoCentavos)}
+                {formatearImporte(pago.montoRecibido)}
               </p>
-              {factura.vueltoCentavos !== null && (
+              {pago.vuelto !== undefined && (
                 <p>
                   <span className="text-muted-foreground">Vuelto: </span>
-                  <span className="font-medium">{formatearImporte(factura.vueltoCentavos)}</span>
+                  <span className="font-medium">{formatearImporte(pago.vuelto)}</span>
                 </p>
               )}
             </>
           )}
 
           {/* Regla 9: de la tarjeta solo existen tipo, marca y últimos 4 */}
-          {factura.formaPago === 'tarjeta' && factura.tarjeta && (
+          {pago.forma === 'tarjeta' && pago.tarjeta && (
             <p>
-              {factura.tarjeta.tipo === 'credito' ? 'Crédito' : 'Débito'} · {factura.tarjeta.marca} · terminada en{' '}
-              {factura.tarjeta.ultimos4}
+              {pago.tarjeta.tipo === 'credito' ? 'Crédito' : 'Débito'} · {pago.tarjeta.marca} · terminada en{' '}
+              {pago.tarjeta.ultimos4}
             </p>
           )}
 
-          {factura.formaPago === 'cuenta_corriente' && (
-            <p className="text-muted-foreground">El total se cargó a la cuenta corriente del cliente.</p>
+          {pago.forma === 'cuenta_corriente' && (
+            <>
+              <p className="text-muted-foreground">El total se cargó a la cuenta corriente del cliente.</p>
+              {/* saldoCliente: solo en ventas a cuenta. Es el saldo de HOY,
+                  no el del día de la factura (no se imprime: cambia) */}
+              {factura.saldoCliente !== undefined && (
+                <p className="print:hidden">
+                  <span className="text-muted-foreground">Saldo actual del cliente: </span>
+                  <span className="font-medium">{formatearImporte(factura.saldoCliente)}</span>
+                </p>
+              )}
+            </>
           )}
         </section>
       </article>
