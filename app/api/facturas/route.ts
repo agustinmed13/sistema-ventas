@@ -13,9 +13,10 @@
 // todo eso lo calcula el servidor. Si el cliente pudiera mandar el total,
 // cualquiera compraría por un peso editando el pedido.
 
-import { eq, and, gte, inArray, max, sql } from 'drizzle-orm';
+import { eq, and, gte, lt, inArray, max, desc, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/db/index';
 import {
+  usuarios,
   clientes,
   productos,
   facturas,
@@ -424,18 +425,25 @@ export async function POST(request: Request) {
       // PASO 13 — Armar la respuesta
       // Lo que devuelve esta función es lo que queda en "respuesta".
       // Si llegamos acá sin ningún throw, Drizzle confirma (commit).
+      // Es la MISMA forma que devuelve GET /api/facturas/[id], así la
+      // pantalla usa una sola estructura para el comprobante.
       // ─────────────────────────────────────────────────────
       return {
         id: factura.id,
         numero: numeroFormateado,
         fecha: factura.fecha,
         estado: factura.estado,
+        // Recién emitida nunca está anulada; van para mantener la forma
+        motivoAnulacion: null,
+        anuladaEn: null,
         formaPago: factura.formaPago,
         totalCentavos: factura.totalCentavos,
         montoRecibidoCentavos: factura.montoRecibidoCentavos,
         // Vuelto solo en contado
         vueltoCentavos: montoRecibidoCentavos !== null ? montoRecibidoCentavos - totalCentavos : null,
         tarjeta: tarjeta,
+        // Para mostrar directo: el nombre, o "Consumidor final"
+        clienteNombre: cliente ? cliente.nombre : 'Consumidor final',
         cliente: cliente
           ? {
               id: cliente.id,
@@ -464,6 +472,165 @@ export async function POST(request: Request) {
     if (error instanceof Response) return error;
 
     // Cualquier otra cosa es un error inesperado: 500 sin detalles.
+    return errorInterno(error);
+  }
+}
+
+// ═════════════════════════════════════════════════════════════
+// GET /api/facturas — listado de facturas (RF-V8)
+//
+// Filtros opcionales y combinables, en la URL:
+//   /api/facturas?formaPago=contado&desde=2026-11-01&hasta=2026-11-21
+//
+//   desde, hasta   fechas YYYY-MM-DD (días de Argentina, ambos incluidos)
+//   clienteId      número
+//   formaPago      contado | tarjeta | cuenta_corriente
+//   usuarioId      número (el vendedor que la emitió)
+//   numero         "42" o "0001-00000042"
+//   estado         emitida | anulada
+//
+// PENDIENTE: paginado. La consigna lo pide, pero por ahora devuelve
+// todas las facturas que cumplen los filtros. Documentado en el README.
+// ═════════════════════════════════════════════════════════════
+export async function GET(request: Request) {
+  try {
+    // Los dos roles pueden consultar: alcanza con que haya sesión
+    const usuario = await obtenerUsuarioActual();
+    if (!usuario) return errorNoAutorizado();
+
+    // searchParams = lo que viene después del "?" en la URL.
+    // "|| null" hace que un parámetro vacío (?formaPago=) cuente como
+    // si no hubiera venido.
+    const parametros = new URL(request.url).searchParams;
+    const desde = parametros.get('desde') || null;
+    const hasta = parametros.get('hasta') || null;
+    const clienteId = parametros.get('clienteId') || null;
+    const formaPago = parametros.get('formaPago') || null;
+    const usuarioId = parametros.get('usuarioId') || null;
+    const numero = parametros.get('numero') || null;
+    const estado = parametros.get('estado') || null;
+
+    // Vamos juntando una condición por cada filtro que vino.
+    // Al final se combinan todas con AND. Si no vino ninguno, la lista
+    // queda vacía y se devuelven todas las facturas.
+    const condiciones: SQL[] = [];
+
+    // --- Fechas ---
+    // Las fechas se guardan en UTC (hora de Londres), pero el usuario
+    // piensa en días de Argentina (UTC−3). Una venta del 21/11 a las
+    // 22:00 en Tucumán se guarda como "2026-11-22T01:00:00Z".
+    // Por eso convertimos el día pedido a su comienzo en hora argentina:
+    //   desde=2026-11-21 → desde las 00:00 del 21 en Argentina
+    //   hasta=2026-11-21 → hasta ANTES de las 00:00 del 22 en Argentina
+    // Así "hasta" incluye el día completo.
+    const UN_DIA_MS = 24 * 60 * 60 * 1000;
+    const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (desde !== null) {
+      const inicio = new Date(desde + 'T00:00:00-03:00');
+      if (!FORMATO_FECHA.test(desde) || isNaN(inicio.getTime())) {
+        return errorValidacion('La fecha "desde" tiene que tener el formato AAAA-MM-DD.', { campo: 'desde' });
+      }
+      // Las fechas ISO se pueden comparar como texto: "2026-11-21..." < "2026-11-22..."
+      condiciones.push(gte(facturas.fecha, inicio.toISOString()));
+    }
+
+    if (hasta !== null) {
+      const inicioDelDia = new Date(hasta + 'T00:00:00-03:00');
+      if (!FORMATO_FECHA.test(hasta) || isNaN(inicioDelDia.getTime())) {
+        return errorValidacion('La fecha "hasta" tiene que tener el formato AAAA-MM-DD.', { campo: 'hasta' });
+      }
+      const inicioDelDiaSiguiente = new Date(inicioDelDia.getTime() + UN_DIA_MS);
+      condiciones.push(lt(facturas.fecha, inicioDelDiaSiguiente.toISOString()));
+    }
+
+    // --- clienteId ---
+    if (clienteId !== null) {
+      const id = Number(clienteId);
+      if (!Number.isInteger(id) || id <= 0) {
+        return errorValidacion('El clienteId no es válido.', { campo: 'clienteId' });
+      }
+      condiciones.push(eq(facturas.clienteId, id));
+    }
+
+    // --- formaPago ---
+    if (formaPago !== null) {
+      if (formaPago !== 'contado' && formaPago !== 'tarjeta' && formaPago !== 'cuenta_corriente') {
+        return errorValidacion('La forma de pago tiene que ser contado, tarjeta o cuenta_corriente.', {
+          campo: 'formaPago',
+        });
+      }
+      condiciones.push(eq(facturas.formaPago, formaPago));
+    }
+
+    // --- usuarioId (vendedor) ---
+    if (usuarioId !== null) {
+      const id = Number(usuarioId);
+      if (!Number.isInteger(id) || id <= 0) {
+        return errorValidacion('El usuarioId no es válido.', { campo: 'usuarioId' });
+      }
+      condiciones.push(eq(facturas.usuarioId, id));
+    }
+
+    // --- numero ---
+    // Acepta "42" o "0001-00000042". Nos quedamos con lo que está después
+    // del último guion y lo pasamos a número: "00000042" → 42.
+    if (numero !== null) {
+      const partes = numero.trim().split('-');
+      const n = Number(partes[partes.length - 1]);
+      if (!Number.isInteger(n) || n <= 0) {
+        return errorValidacion('El número de comprobante no es válido.', { campo: 'numero' });
+      }
+      condiciones.push(eq(facturas.numero, n));
+    }
+
+    // --- estado ---
+    if (estado !== null) {
+      if (estado !== 'emitida' && estado !== 'anulada') {
+        return errorValidacion('El estado tiene que ser emitida o anulada.', { campo: 'estado' });
+      }
+      condiciones.push(eq(facturas.estado, estado));
+    }
+
+    // --- La consulta ---
+    // JOIN = "pegar" a cada factura datos de otra tabla.
+    //   leftJoin clientes: trae el nombre del cliente. Es LEFT porque el
+    //     consumidor final no tiene cliente (clienteId null): sin LEFT,
+    //     esas facturas desaparecerían del listado.
+    //   innerJoin usuarios: trae el nombre del vendedor. Toda factura
+    //     tiene vendedor. Del usuario pedimos SOLO el nombre.
+    const filas = await db
+      .select({
+        id: facturas.id,
+        puntoVenta: facturas.puntoVenta,
+        numero: facturas.numero,
+        fecha: facturas.fecha,
+        estado: facturas.estado,
+        formaPago: facturas.formaPago,
+        totalCentavos: facturas.totalCentavos,
+        clienteNombre: clientes.nombre,
+        vendedorNombre: usuarios.nombre,
+      })
+      .from(facturas)
+      .leftJoin(clientes, eq(facturas.clienteId, clientes.id))
+      .innerJoin(usuarios, eq(facturas.usuarioId, usuarios.id))
+      .where(and(...condiciones))
+      // Las más nuevas primero. Si dos tienen la misma fecha, decide el número.
+      .orderBy(desc(facturas.fecha), desc(facturas.numero));
+
+    const datos = filas.map((f) => ({
+      id: f.id,
+      numero: String(f.puntoVenta).padStart(4, '0') + '-' + String(f.numero).padStart(8, '0'),
+      fecha: f.fecha,
+      estado: f.estado,
+      formaPago: f.formaPago,
+      totalCentavos: f.totalCentavos,
+      clienteNombre: f.clienteNombre ?? 'Consumidor final', // ?? = "si es null, usá esto"
+      vendedorNombre: f.vendedorNombre,
+    }));
+
+    return Response.json({ datos });
+  } catch (error) {
     return errorInterno(error);
   }
 }
