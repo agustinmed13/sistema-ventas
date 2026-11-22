@@ -19,6 +19,7 @@ import { obtenerCliente, obtenerCuentaCorriente } from '@/lib/servicios/clientes
 import { formatearDocumento, formatearFecha, formatearFechaHora, formatearImporte } from '@/lib/formato';
 import { InsigniaEstado, nombreFormaPago } from '../../ventas/etiquetas';
 import FormularioPago from './formulario-pago';
+import BotonEstado from './boton-estado';
 
 type ParametrosURL = { [clave: string]: string | string[] | undefined };
 
@@ -95,6 +96,14 @@ export default async function FichaClientePage({
         {!cliente.activo && (
           <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium">Inactivo</span>
         )}
+      </div>
+
+      {/* ─── Acciones: editar (RF-C2) y baja / reactivar (RF-C7) ─── */}
+      <div className="flex flex-wrap items-start gap-2">
+        <Button asChild variant="outline">
+          <Link href={`/clientes/${cliente.id}/editar`}>Editar</Link>
+        </Button>
+        <BotonEstado clienteId={cliente.id} nombre={cliente.nombre} activo={cliente.activo} />
       </div>
 
       {/* ─── Datos y saldo (RF-C3) ─── */}

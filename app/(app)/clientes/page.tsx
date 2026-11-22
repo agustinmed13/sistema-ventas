@@ -74,7 +74,13 @@ export default async function ClientesPage({
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <h1 className="text-2xl font-semibold">Clientes</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold">Clientes</h1>
+        {/* Alta de cliente (RF-C2) */}
+        <Button asChild>
+          <Link href="/clientes/nuevo">Nuevo cliente</Link>
+        </Button>
+      </div>
 
       <FiltrosClientes filtros={filtros} />
 
