@@ -276,6 +276,19 @@ Códigos según `requerimientos.md` de la cátedra.
   (`PATCH /api/productos/{id}` con `"activo": false`). El producto deja de
   aparecer en el catálogo y en ventas, pero conserva su historial y se puede
   reactivar.
+- **RF-P4 — Ingreso de stock** y **RF-P5 — Egreso de stock.** Solo el
+  administrador, desde la ficha del producto
+  (`POST /api/productos/{id}/movimientos`): tipo, cantidad positiva (el signo
+  lo pone el servidor) y motivo de la lista de la consigna según el tipo. La
+  existencia cambia solo a través de `moverStock()`, que actualiza con
+  condición y graba el movimiento en la misma transacción: un egreso que la
+  dejaría en negativo responde `409 STOCK_INSUFICIENTE` y no modifica nada.
+- **RF-P6 — Movimientos.** En la ficha del producto: fecha, tipo, cantidad con
+  signo, existencia resultante, motivo, usuario y link a la factura en ventas
+  y anulaciones; del más nuevo al más viejo, paginado. API:
+  `GET /api/productos/{id}/movimientos` y `GET /api/movimientos-stock` (filtros
+  `productoId`, `tipo`, `desde`, `hasta`). La existencia de cada producto
+  coincide con la suma de sus movimientos (punto 5 de la sección 10.8).
 - **RF-P7 — Categorías (solo API).** `GET /api/categorias` devuelve las activas
   sin paginar; `POST /api/categorias` y `PATCH /api/categorias/{id}` (solo
   admin) para alta, renombre y desactivación con `"activa"`. El nombre es único
@@ -306,13 +319,10 @@ Códigos según `requerimientos.md` de la cátedra.
 
 ### Productos y existencias
 
-- **RF-P4 — Ingreso de stock** y **RF-P5 — Egreso de stock.** `moverStock()`
-  ya admite ingresos y egresos (y no deja la existencia en negativo); faltan
-  `POST /api/productos/{id}/movimientos` y el formulario en la ficha del
-  producto.
-- **RF-P6 — Movimientos de stock.** Se registran en cada operación (ventas,
-  anulaciones y stock inicial); faltan `GET /api/productos/{id}/movimientos`,
-  `GET /api/movimientos-stock` y mostrarlos en la ficha del producto.
+- **Observación de los movimientos manuales:**
+  `POST /api/productos/{id}/movimientos` acepta y valida `observacion`, pero no
+  se guarda porque la tabla `movimientos_stock` no tiene esa columna; por eso
+  la pantalla no la pide. Agregarla requiere una migración del esquema.
 - **RF-P7 — Categorías:** la API está completa; falta la pantalla de alta,
   renombre y desactivación.
 
@@ -342,7 +352,6 @@ Códigos según `requerimientos.md` de la cátedra.
   la consigna, punto 6 de la lista de la sección 10.8): no implementada; hoy la
   validación está escrita a mano en cada servicio.
 - **Rutas de la API (sección 11.2 y 11.9):** hay 8 de las 31. Faltan:
-  - `GET` y `POST /api/productos/{id}/movimientos`, `GET /api/movimientos-stock`
   - `GET` y `POST /api/clientes`, `GET` y `PATCH /api/clientes/{id}`,
     `GET /api/clientes/{id}/cuenta`, `POST /api/clientes/{id}/pagos`,
     `GET /api/pagos/{id}`

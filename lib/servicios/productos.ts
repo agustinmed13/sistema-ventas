@@ -1,10 +1,12 @@
-// Servicios del catálogo: productos (RF-P1, RF-P2, RF-P3) y categorías (RF-P7).
+// Servicios del catálogo: productos (RF-P1, RF-P2, RF-P3), movimientos de
+// stock (RF-P4, RF-P5, RF-P6) y categorías (RF-P7).
 // La ruta HTTP solo recibe los datos y llama a estas funciones (sección 10.8).
 
-import { and, count, eq, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { categorias, productos } from '@/db/schema';
+import { categorias, facturas, movimientosStock, productos, usuarios } from '@/db/schema';
 import { ApiError, type DetalleError } from '@/lib/errores';
+import { formatearNumeroFactura } from '@/lib/formato';
 import { moverStock } from '@/lib/servicios/stock';
 
 // El usuario que hizo el pedido (lo que devuelve obtenerUsuarioActual).
@@ -832,4 +834,305 @@ export async function modificarCategoria(
 
     // ═══ 4. DEVOLVER ═══
     return aCategoriaApi(modificada);
+}
+
+// ═════════════════════════════════════════════════════════════
+// MOVIMIENTOS DE STOCK — RF-P4 (ingreso), RF-P5 (egreso), RF-P6 (consulta)
+//
+// Formato en la API (consigna, sección 11.4):
+// {
+//   "id": 812,
+//   "producto": { "id": 1, "codigo": "HE-001" },
+//   "tipo": "egreso",
+//   "cantidad": -2,                 ← CON SIGNO
+//   "existenciaResultante": 22,
+//   "motivo": "Rotura",
+//   "referencia": null,             ← en ventas y anulaciones:
+//                                     { "facturaId": 1233, "numero": "0001-00001233" }
+//   "usuario": { "id": 1, "nombre": "Laura Méndez" },
+//   "fecha": "2026-10-29T18:40:00Z"
+// }
+//
+// La existencia NO se cambia acá: se llama a moverStock() (lib/servicios/stock.ts),
+// la única función del sistema que la toca (regla 2).
+// ═════════════════════════════════════════════════════════════
+
+// Motivos permitidos para los movimientos manuales (consigna 11.4).
+// Los exportamos para que la pantalla arme el desplegable con la MISMA
+// lista: si se agrega un motivo, se agrega solo acá.
+export const MOTIVOS_INGRESO = ['Reposición', 'Stock inicial', 'Devolución de cliente'];
+export const MOTIVOS_EGRESO = ['Rotura', 'Vencimiento', 'Ajuste de inventario', 'Uso interno'];
+
+// Fecha AAAA-MM-DD, la misma validación que el listado de facturas.
+const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+// Las columnas de un movimiento, con su producto, su usuario y (si viene
+// de una venta o anulación) su factura. leftJoin porque los movimientos
+// manuales no tienen factura: en esos, las columnas de la factura vienen null.
+const columnasMovimiento = {
+    id: movimientosStock.id,
+    productoId: productos.id,
+    productoCodigo: productos.codigo,
+    tipo: movimientosStock.tipo,
+    cantidad: movimientosStock.cantidad,
+    existenciaResultante: movimientosStock.existenciaResultante,
+    motivo: movimientosStock.motivo,
+    fecha: movimientosStock.fecha,
+    usuarioId: usuarios.id,
+    usuarioNombre: usuarios.nombre,
+    facturaId: facturas.id,
+    facturaPuntoVenta: facturas.puntoVenta,
+    facturaNumero: facturas.numero,
+};
+
+type FilaMovimiento = {
+    id: number;
+    productoId: number;
+    productoCodigo: string;
+    tipo: 'venta' | 'anulacion' | 'ingreso' | 'egreso';
+    cantidad: number;
+    existenciaResultante: number;
+    motivo: string;
+    fecha: string;
+    usuarioId: number;
+    usuarioNombre: string;
+    facturaId: number | null;
+    facturaPuntoVenta: number | null;
+    facturaNumero: number | null;
+};
+
+// Arma una consulta de movimientos con sus tres JOIN. La usan el alta
+// (para devolver el movimiento recién creado) y los dos listados.
+function consultaMovimientos() {
+    return db
+        .select(columnasMovimiento)
+        .from(movimientosStock)
+        .innerJoin(productos, eq(movimientosStock.productoId, productos.id))
+        .innerJoin(usuarios, eq(movimientosStock.usuarioId, usuarios.id))
+        .leftJoin(facturas, eq(movimientosStock.facturaId, facturas.id));
+}
+
+// Traduce la fila al JSON de la sección 11.4.
+function aMovimientoApi(fila: FilaMovimiento) {
+    let referencia = null;
+    if (fila.facturaId !== null && fila.facturaPuntoVenta !== null && fila.facturaNumero !== null) {
+        referencia = {
+            facturaId: fila.facturaId,
+            numero: formatearNumeroFactura(fila.facturaPuntoVenta, fila.facturaNumero),
+        };
+    }
+
+    return {
+        id: fila.id,
+        producto: { id: fila.productoId, codigo: fila.productoCodigo },
+        tipo: fila.tipo,
+        cantidad: fila.cantidad,
+        existenciaResultante: fila.existenciaResultante,
+        motivo: fila.motivo,
+        referencia,
+        usuario: { id: fila.usuarioId, nombre: fila.usuarioNombre },
+        fecha: fila.fecha,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────
+// registrarMovimiento — POST /api/productos/{id}/movimientos. Solo admin.
+//
+// datos (sin validar):
+// { "tipo": "egreso", "cantidad": 2, "motivo": "Rotura", "observacion": "..." }
+//
+// La cantidad llega POSITIVA y el signo lo pone el servidor (consigna 11.4).
+// ─────────────────────────────────────────────────────────────
+export async function registrarMovimiento(usuario: UsuarioSesion, idTexto: string, datos: any) {
+    // ═══ 1. VALIDAR ═══
+    const productoId = Number(idTexto);
+    if (!Number.isInteger(productoId) || productoId <= 0) {
+        throw new ApiError(404, 'NO_ENCONTRADO', 'No existe ese producto.');
+    }
+
+    const detalles: DetalleError[] = [];
+
+    if (datos.tipo !== 'ingreso' && datos.tipo !== 'egreso') {
+        detalles.push({ campo: 'tipo', mensaje: 'Tiene que ser ingreso o egreso.' });
+    }
+
+    // Entero mayor que cero: el signo no lo elige quien llama
+    if (!Number.isInteger(datos.cantidad) || datos.cantidad <= 0) {
+        detalles.push({ campo: 'cantidad', mensaje: 'Tiene que ser un entero mayor que cero.' });
+    }
+
+    // El motivo depende del tipo: "Rotura" no vale para un ingreso.
+    // RF-P5: en el egreso el motivo es obligatorio (acá lo es en los dos).
+    const motivosValidos = datos.tipo === 'ingreso' ? MOTIVOS_INGRESO : MOTIVOS_EGRESO;
+    if (typeof datos.motivo !== 'string' || !motivosValidos.includes(datos.motivo)) {
+        detalles.push({ campo: 'motivo', mensaje: `Tiene que ser uno de: ${motivosValidos.join(', ')}.` });
+    }
+
+    // observacion: opcional, texto corto. OJO: hoy NO se guarda, porque la
+    // tabla movimientos_stock (db/schema.ts) no tiene esa columna.
+    if (datos.observacion !== undefined && datos.observacion !== null) {
+        if (typeof datos.observacion !== 'string' || datos.observacion.length > 200) {
+            detalles.push({ campo: 'observacion', mensaje: 'Tiene que ser un texto de hasta 200 caracteres.' });
+        }
+    }
+
+    lanzarErroresValidacion(detalles);
+
+    // ═══ 2. PERMISO ═══
+    // Ingresos y egresos manuales son del administrador (sección 3 de la
+    // consigna); el vendedor recibe 403 (sección 10.8, punto 2).
+    if (usuario.rol !== 'admin') {
+        throw new ApiError(403, 'SIN_PERMISO', 'Solo un administrador puede registrar movimientos de stock.');
+    }
+
+    // ═══ 3. REGLAS ═══
+    const [producto] = await db
+        .select({ id: productos.id })
+        .from(productos)
+        .where(eq(productos.id, productoId));
+
+    if (!producto) {
+        throw new ApiError(404, 'NO_ENCONTRADO', 'No existe ese producto.');
+    }
+
+    // El signo: el egreso resta (cantidad negativa), el ingreso suma.
+    const cantidadConSigno = datos.tipo === 'egreso' ? -datos.cantidad : datos.cantidad;
+
+    // Toca dos tablas (productos y movimientos_stock): una transacción.
+    // moverStock() actualiza la existencia CON CONDICIÓN (WHERE existencia >= ?)
+    // y graba el movimiento. Si un egreso dejaría la existencia en negativo,
+    // lanza 409 STOCK_INSUFICIENTE y no se modifica nada (regla 1, RF-P5).
+    const movimientoId = await db.transaction(async (tx) => {
+        await moverStock(tx, {
+            productoId,
+            tipo: datos.tipo,
+            cantidad: cantidadConSigno,
+            motivo: datos.motivo,
+            fecha: new Date().toISOString(),
+            usuarioId: usuario.id, // regla 11: quién lo hizo
+            facturaId: null, // los movimientos manuales no vienen de una factura
+        });
+
+        // moverStock no devuelve el id del movimiento: es el último de este
+        // producto, leído dentro de la misma transacción.
+        const [ultimo] = await tx
+            .select({ id: movimientosStock.id })
+            .from(movimientosStock)
+            .where(eq(movimientosStock.productoId, productoId))
+            .orderBy(desc(movimientosStock.id))
+            .limit(1);
+
+        return ultimo.id;
+    });
+
+    // ═══ 4. DEVOLVER ═══ (201 con el movimiento y la existencia resultante)
+    const [fila] = await consultaMovimientos().where(eq(movimientosStock.id, movimientoId));
+    return aMovimientoApi(fila);
+}
+
+// ─────────────────────────────────────────────────────────────
+// listarMovimientos — GET /api/movimientos-stock (RF-P6). Los dos roles.
+// Filtros (consigna 11.4): productoId, tipo, desde, hasta, y paginación.
+// Del más nuevo al más viejo.
+// ─────────────────────────────────────────────────────────────
+type FiltrosMovimientos = {
+    productoId: string | null;
+    tipo: string | null;
+    desde: string | null;
+    hasta: string | null;
+    page: string | null;
+    pageSize: string | null;
+};
+
+export async function listarMovimientos(usuario: UsuarioSesion, filtros: FiltrosMovimientos) {
+    // Los dos roles pueden consultar los movimientos: no hay chequeo de rol.
+    void usuario;
+
+    // ═══ 1. VALIDAR ═══
+    const detalles: DetalleError[] = [];
+    const condiciones: SQL[] = [];
+
+    if (filtros.productoId !== null) {
+        const productoId = Number(filtros.productoId);
+        if (!Number.isInteger(productoId) || productoId <= 0) {
+            detalles.push({ campo: 'productoId', mensaje: 'Tiene que ser un entero positivo.' });
+        } else {
+            condiciones.push(eq(movimientosStock.productoId, productoId));
+        }
+    }
+
+    if (filtros.tipo !== null) {
+        if (!['venta', 'anulacion', 'ingreso', 'egreso'].includes(filtros.tipo)) {
+            detalles.push({ campo: 'tipo', mensaje: 'Tiene que ser venta, anulacion, ingreso o egreso.' });
+        } else {
+            condiciones.push(sql`${movimientosStock.tipo} = ${filtros.tipo}`);
+        }
+    }
+
+    // Fechas: días de Argentina (UTC−3, sección 11.1), igual que el listado
+    // de facturas:
+    //   desde=2026-11-21 → desde las 00:00 del 21 en Argentina
+    //   hasta=2026-11-21 → hasta ANTES de las 00:00 del 22 (el día completo)
+    // Las fechas se guardan como texto ISO, que se puede comparar como texto.
+    if (filtros.desde !== null) {
+        const inicio = new Date(filtros.desde + 'T00:00:00-03:00');
+        if (!FORMATO_FECHA.test(filtros.desde) || isNaN(inicio.getTime())) {
+            detalles.push({ campo: 'desde', mensaje: 'Tiene que tener el formato AAAA-MM-DD.' });
+        } else {
+            condiciones.push(gte(movimientosStock.fecha, inicio.toISOString()));
+        }
+    }
+
+    if (filtros.hasta !== null) {
+        const inicioDelDia = new Date(filtros.hasta + 'T00:00:00-03:00');
+        if (!FORMATO_FECHA.test(filtros.hasta) || isNaN(inicioDelDia.getTime())) {
+            detalles.push({ campo: 'hasta', mensaje: 'Tiene que tener el formato AAAA-MM-DD.' });
+        } else {
+            const diaSiguiente = new Date(inicioDelDia.getTime() + 24 * 60 * 60 * 1000);
+            condiciones.push(lt(movimientosStock.fecha, diaSiguiente.toISOString()));
+        }
+    }
+
+    const { page, pageSize } = leerPaginacion(filtros.page, filtros.pageSize, detalles);
+
+    lanzarErroresValidacion(detalles);
+
+    // ═══ 2. CONSULTAR ═══
+    const [conteo] = await db
+        .select({ total: count() })
+        .from(movimientosStock)
+        .where(and(...condiciones));
+
+    // Del más nuevo al más viejo. Se ordena por id (y no por fecha) porque
+    // dos movimientos pueden tener la misma fecha: el id nunca se repite.
+    const filas = await consultaMovimientos()
+        .where(and(...condiciones))
+        .orderBy(desc(movimientosStock.id))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize);
+
+    return { data: filas.map(aMovimientoApi), page, pageSize, total: conteo.total };
+}
+
+// ─────────────────────────────────────────────────────────────
+// listarMovimientosDeProducto — GET /api/productos/{id}/movimientos (RF-P6).
+// El historial de UN producto: es listarMovimientos con productoId fijo,
+// pero si el producto no existe responde 404 (el id viene de la URL).
+// ─────────────────────────────────────────────────────────────
+export async function listarMovimientosDeProducto(
+    usuario: UsuarioSesion,
+    idTexto: string,
+    filtros: { page: string | null; pageSize: string | null }
+) {
+    // Reusa obtenerProducto: valida el id y da 404 si no existe.
+    await obtenerProducto(usuario, idTexto);
+
+    return listarMovimientos(usuario, {
+        productoId: idTexto,
+        tipo: null,
+        desde: null,
+        hasta: null,
+        page: filtros.page,
+        pageSize: filtros.pageSize,
+    });
 }
