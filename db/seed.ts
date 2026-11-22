@@ -266,8 +266,9 @@ const clientesACuenta = clientesGuardados.filter((c) => c.cuentaCorrienteHabilit
 // ─────────────────────────────────────────────────────────────
 // 8. Facturas — con el SERVICIO crearFactura() (consigna 10.7)
 //
-// Se le pasa el mismo objeto que recibiría POST /api/facturas:
-//   { clienteId, formaPago, items, montoRecibidoCentavos, tarjeta }
+// Se le pasa el mismo objeto que recibiría POST /api/facturas
+// (sección 11.6): la forma de pago va ANIDADA dentro de "pago".
+//   { clienteId, items, pago: { forma, montoRecibido, tarjeta } }
 // Sin precios ni totales: los calcula el servicio (sección 11.1).
 //
 // Con eso, sin que el seed lo controle a mano:
@@ -323,14 +324,21 @@ while (facturasCreadas < FACTURAS_A_CREAR && intentos < MAXIMO_INTENTOS) {
     cantidad: entreEnteros(1, 4),
   }));
 
-  // Lo que el cliente pagaría, igual que el body de la API
+  // Lo que el cliente pagaría, igual que el body de la API (sección 11.6).
+  // "pago" es un objeto aparte porque abajo se le agregan campos según la
+  // forma; como "datos" guarda una referencia a él, agregarlos después
+  // también los ve "datos".
+  const pago: {
+    forma: string;
+    montoRecibido?: number;
+    tarjeta?: { tipo: string; marca: string; ultimos4: string };
+  } = { forma: formaPago };
+
   const datos: {
     clienteId: number | null;
-    formaPago: string;
     items: { productoId: number; cantidad: number }[];
-    montoRecibidoCentavos?: number;
-    tarjeta?: { tipo: string; marca: string; ultimos4: string };
-  } = { clienteId, formaPago, items };
+    pago: typeof pago;
+  } = { clienteId, items, pago };
 
   if (formaPago === 'contado') {
     // El cliente entrega un monto redondo, el próximo múltiplo de
@@ -342,12 +350,12 @@ while (facturasCreadas < FACTURAS_A_CREAR && intentos < MAXIMO_INTENTOS) {
       const producto = productosGuardados.find((p) => p.id === item.productoId)!;
       totalEstimado = totalEstimado + producto.precioCentavos * item.cantidad;
     }
-    datos.montoRecibidoCentavos = Math.ceil(totalEstimado / 100000) * 100000;
+    pago.montoRecibido = Math.ceil(totalEstimado / 100000) * 100000;
   }
 
   if (formaPago === 'tarjeta') {
     // Regla 9: solo tipo, marca y últimos 4 dígitos
-    datos.tarjeta = {
+    pago.tarjeta = {
       tipo: azar() < 0.5 ? 'debito' : 'credito',
       marca: elegir(marcasTarjeta),
       ultimos4: String(entreEnteros(1000, 9999)),
