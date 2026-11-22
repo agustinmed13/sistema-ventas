@@ -285,7 +285,10 @@ Códigos según `requerimientos.md` de la cátedra.
   dejaría en negativo responde `409 STOCK_INSUFICIENTE` y no modifica nada.
 - **RF-P6 — Movimientos.** En la ficha del producto: fecha, tipo, cantidad con
   signo, existencia resultante, motivo, usuario y link a la factura en ventas
-  y anulaciones; del más nuevo al más viejo, paginado. API:
+  y anulaciones; del más nuevo al más viejo, paginado. Además, la pestaña
+  **Existencias** del módulo Productos (`/productos/existencias`) muestra los
+  movimientos de todos los productos, con filtros por producto, tipo y fechas.
+  API:
   `GET /api/productos/{id}/movimientos` y `GET /api/movimientos-stock` (filtros
   `productoId`, `tipo`, `desde`, `hasta`). La existencia de cada producto
   coincide con la suma de sus movimientos (punto 5 de la sección 10.8).

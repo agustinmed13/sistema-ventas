@@ -20,6 +20,7 @@ import { obtenerUsuarioActual } from '@/lib/auth';
 import { ApiError } from '@/lib/errores';
 import { listarCategorias, listarProductos } from '@/lib/servicios/productos';
 import { formatearImporte } from '@/lib/formato';
+import PestanasProductos from './pestanas-productos';
 
 // Lo que llega en la URL después del "?".
 type ParametrosURL = { [clave: string]: string | string[] | undefined };
@@ -85,6 +86,9 @@ export default async function ProductosPage({
                     <BotonNuevoProducto />
                 </Suspense>
             </div>
+
+            {/* Catálogo | Existencias (consigna, sección 4) */}
+            <PestanasProductos activa="catalogo" />
 
             {/* Los filtros necesitan la lista de categorías y el rol del
                 usuario, que se leen en el servidor: por eso van en su

@@ -111,14 +111,16 @@ export default function MarcoApp({ nombre, rol, children }: Props) {
 
     return (
         <div className="min-h-screen bg-background">
-            {/* PANEL LATERAL FIJO: solo desde 768px (md) hacia arriba. */}
-            <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col bg-sidebar md:flex">
+            {/* PANEL LATERAL FIJO: solo desde 768px (md) hacia arriba.
+                print:hidden = no sale al imprimir (por ejemplo, el comprobante
+                de la factura, RF-V7: "vista imprimible"). */}
+            <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col bg-sidebar md:flex print:hidden">
                 {contenidoPanel}
             </aside>
 
             {/* MENÚ DEL CELULAR: solo existe mientras menuAbierto sea true. */}
             {menuAbierto && (
-                <div className="fixed inset-0 z-40 md:hidden">
+                <div className="fixed inset-0 z-40 md:hidden print:hidden">
                     {/* Fondo oscuro: tocarlo cierra el menú. */}
                     <button
                         type="button"
@@ -142,10 +144,12 @@ export default function MarcoApp({ nombre, rol, children }: Props) {
             )}
 
             {/* Todo lo que no es el panel lateral. En escritorio se corre 16rem
-          (md:pl-64) para no quedar tapado por el panel fijo. */}
-            <div className="md:pl-64">
-                {/* BARRA SUPERIOR */}
-                <header className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b bg-card px-4">
+          (md:pl-64) para no quedar tapado por el panel fijo. Al imprimir no
+          hay panel, así que el corrimiento se saca (print:pl-0): si no, la
+          hoja saldría con un margen izquierdo vacío. */}
+            <div className="md:pl-64 print:pl-0">
+                {/* BARRA SUPERIOR (tampoco sale al imprimir) */}
+                <header className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b bg-card px-4 print:hidden">
                     <Button
                         variant="ghost"
                         size="icon"
@@ -179,12 +183,13 @@ export default function MarcoApp({ nombre, rol, children }: Props) {
                 </header>
 
                 {errorSalida && (
-                    <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                    <p className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 print:hidden">
                         {errorSalida}
                     </p>
                 )}
 
-                <main className="p-4 md:p-6">{children}</main>
+                {/* print:p-0: en papel, los márgenes los pone la impresora */}
+                <main className="p-4 md:p-6 print:p-0">{children}</main>
             </div>
         </div>
     );

@@ -25,13 +25,11 @@ import {
     listarMovimientosDeProducto,
     obtenerProducto,
 } from '@/lib/servicios/productos';
-import { formatearFechaHora, formatearImporte } from '@/lib/formato';
+import { formatearImporte } from '@/lib/formato';
 import FormularioProducto from '../formulario-producto';
+import TablaMovimientos from '../tabla-movimientos';
 import BotonEstado from './boton-estado';
 import FormularioMovimiento from './formulario-movimiento';
-
-// Cómo se muestra cada tipo de movimiento
-const NOMBRE_TIPO = { venta: 'Venta', anulacion: 'Anulación', ingreso: 'Ingreso', egreso: 'Egreso' };
 
 export default async function FichaProductoPage({
     params,
@@ -214,53 +212,8 @@ async function HistorialMovimientos({ id, pagina }: { id: string; pagina: string
 
             {resultado && resultado.data.length > 0 && (
                 <>
-                    <div className="overflow-x-auto rounded-xl border bg-card">
-                        <table className="w-full text-sm">
-                            <thead className="border-b bg-muted text-left text-xs text-muted-foreground">
-                                <tr>
-                                    <th className="px-3 py-2 font-medium">Fecha</th>
-                                    <th className="px-3 py-2 font-medium">Tipo</th>
-                                    <th className="px-3 py-2 text-right font-medium">Cantidad</th>
-                                    <th className="px-3 py-2 text-right font-medium">Existencia</th>
-                                    <th className="hidden px-3 py-2 font-medium sm:table-cell">Motivo</th>
-                                    <th className="hidden px-3 py-2 font-medium md:table-cell">Usuario</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                                {resultado.data.map((m) => (
-                                    <tr key={m.id}>
-                                        {/* Fechas con lib/formato.ts: dd/mm/aaaa y hora de Argentina */}
-                                        <td className="whitespace-nowrap px-3 py-2">{formatearFechaHora(m.fecha)}</td>
-                                        <td className="px-3 py-2">{NOMBRE_TIPO[m.tipo]}</td>
-                                        {/* Con signo: + suma, − resta. Así se ve que la suma
-                                            de la columna da la existencia (sección 10.8, punto 5) */}
-                                        <td
-                                            className={`whitespace-nowrap px-3 py-2 text-right font-medium ${
-                                                m.cantidad < 0 ? 'text-destructive' : 'text-primary'
-                                            }`}
-                                        >
-                                            {m.cantidad > 0 ? `+${m.cantidad}` : m.cantidad}
-                                        </td>
-                                        <td className="px-3 py-2 text-right">{m.existenciaResultante}</td>
-                                        <td className="hidden px-3 py-2 sm:table-cell">
-                                            {/* En ventas y anulaciones, link al comprobante */}
-                                            {m.referencia ? (
-                                                <Link
-                                                    href={`/ventas/${m.referencia.facturaId}`}
-                                                    className="text-primary hover:underline"
-                                                >
-                                                    Factura {m.referencia.numero}
-                                                </Link>
-                                            ) : (
-                                                m.motivo
-                                            )}
-                                        </td>
-                                        <td className="hidden px-3 py-2 md:table-cell">{m.usuario.nombre}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                    {/* La misma tabla que la pestaña Existencias, sin la columna Producto */}
+                    <TablaMovimientos movimientos={resultado.data} mostrarProducto={false} />
 
                     <PaginadoMovimientos
                         id={id}
