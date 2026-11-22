@@ -67,3 +67,43 @@ Qué aprendimos: el error no fue "guardar puntos", fue tener la misma regla
 decidida en dos lugares (punto 7 de la lista de control de la sección 10.8:
 cada regla vive en un solo lugar). Antes de decidir cómo se guarda un dato,
 hay que buscar si el proyecto ya lo decidió.
+
+## 21/11 — Comandos de prueba que no funcionaban: comillas de bash y un campo inventado
+
+Qué pasó: para probar GET /api/productos, el agente pasó comandos curl de
+login con dos errores. (1) Usaban comillas simples '{"email":...}', que
+funcionan en bash pero no en cmd.exe de Windows: el JSON llegaba cortado y
+el servidor respondía 400 JSON_INVALIDO. (2) Mandaban el campo "password",
+cuando nuestro login espera "contrasena". El agente asumió el nombre en vez
+de leer app/api/auth/login/route.ts.
+
+Cómo se corrigió: en cmd, el JSON va entre comillas dobles y las de adentro
+se escapan con \" ; y se usa el campo "contrasena".
+
+Qué aprendimos: el agente no tiene que suponer nombres de campo, ni siquiera
+en un comando de prueba: tiene que leerlos del código. Es la misma regla de
+la sección 5.1 ("no inventar"). Y el 400 JSON_INVALIDO mostró que la ruta de
+login valida bien un cuerpo roto.
+
+## 21/11 — Categorías: un código RF inventado y datos basura en la base compartida
+
+Qué pasó (1): al escribir el servicio de categorías, el agente comentó
+"RF-P4" sin verificarlo. En db/schema.ts las categorías son RF-P7 (RF-P4 es
+el ingreso de stock). Lo detectó el mismo agente buscando los códigos RF en
+el repo, antes de entregar.
+
+Qué pasó (2): al probar el alta de categorías con curl, los acentos llegaron
+mal codificados y se guardó "Categor�a de prueba" (el carácter de reemplazo
+U+FFFD). Por eso la prueba de nombre duplicado "pasó" sin detectar nada: comparaba
+contra un nombre roto. Quedaron 4 categorías basura en la base de Turso que
+usa todo el grupo.
+
+Cómo se corrigió: se cambió RF-P4 por RF-P7. Las categorías basura (ids 11 a
+14, sin productos) se borraron después de verificar que nada las usaba. Las
+pruebas con acentos se repitieron desde Node (fetch manda UTF-8 siempre) y
+ahí el duplicado sí dio 409 NOMBRE_DUPLICADO.
+
+Qué aprendimos: una prueba que "da bien" también puede estar mal armada.
+Si un resultado sorprende (un duplicado que no se detecta), hay que mirar
+los datos guardados, no solo la respuesta. Y probar contra una base
+compartida deja rastros: conviene usar nombres que se reconozcan como prueba.
