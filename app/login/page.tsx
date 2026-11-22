@@ -19,6 +19,21 @@ const puntos = [
   { icono: ChartColumn, texto: 'Indicadores del negocio en el tablero' },
 ];
 
+// ─────────────────────────────────────────────────────────────
+// Usuarios de demostración (README, sección 4).
+//
+// Están escritos acá a propósito: son los usuarios de prueba que la
+// consigna (sección 13) pide entregar junto con el trabajo, así que ya
+// son públicos. Los botones de abajo NO saltean la autenticación:
+// completan el formulario y usan el mismo POST /api/auth/login que
+// cualquier otro ingreso. Si se borrara el usuario de la base, el botón
+// dejaría de funcionar, como corresponde.
+// ─────────────────────────────────────────────────────────────
+const DEMO = {
+  admin: { email: 'admin@mostrador.com', password: 'Mostrador2026' },
+  vendedor: { email: 'vendedor@mostrador.com', password: 'Vendedor2026' },
+};
+
 // El cuadrado con la "M": el mismo logo que el panel lateral del sistema
 // (components/marco-app.tsx), para que se reconozca al entrar.
 function Logo() {
@@ -39,11 +54,10 @@ export default function PaginaLogin() {
   const [error, setError] = useState(''); // mensaje a mostrar ('' = ninguno)
   const [cargando, setCargando] = useState(false); // true mientras espera al servidor
 
-  async function enviar(evento: FormEvent<HTMLFormElement>) {
-    // Por defecto, un <form> recarga la página al enviarse. Lo evitamos:
-    // el envío lo hacemos nosotros con fetch.
-    evento.preventDefault();
-
+  // El ingreso de verdad. Recibe las credenciales por parámetro para que
+  // lo usen tanto el formulario como los botones de demostración, sin
+  // repetir el fetch en dos lugares.
+  async function iniciar(emailUsado: string, passwordUsada: string) {
     setCargando(true);
     setError('');
 
@@ -53,7 +67,7 @@ export default function PaginaLogin() {
       const respuesta = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: emailUsado, password: passwordUsada }),
       });
 
       // respuesta.ok es true para los códigos 200-299.
@@ -79,6 +93,23 @@ export default function PaginaLogin() {
     // Llegamos acá solo si hubo error. Los campos NO se borran, para que
     // el usuario pueda corregir lo que escribió.
     setCargando(false);
+  }
+
+  // El formulario: usa lo que escribió el usuario.
+  async function enviar(evento: FormEvent<HTMLFormElement>) {
+    // Por defecto, un <form> recarga la página al enviarse. Lo evitamos:
+    // el envío lo hacemos nosotros con fetch.
+    evento.preventDefault();
+    await iniciar(email, password);
+  }
+
+  // Los botones de demostración: completan los campos a la vista (para que
+  // se vea con qué usuario se entra) y después hacen el mismo ingreso.
+  async function entrarComo(rol: 'admin' | 'vendedor') {
+    const credenciales = DEMO[rol];
+    setEmail(credenciales.email);
+    setPassword(credenciales.password);
+    await iniciar(credenciales.email, credenciales.password);
   }
 
   // ─────────────────────────────────────────────────────────
@@ -185,6 +216,44 @@ export default function PaginaLogin() {
               {cargando ? 'Entrando...' : 'Entrar'}
             </Button>
           </form>
+
+          {/* ═══ Modo demostración ═══
+              Pedido para la corrección: entrar con un clic, sin tipear.
+              type="button" para que NO envíen el formulario: el ingreso lo
+              hace entrarComo(). Están fuera del <form> por lo mismo. */}
+          <div className="mt-6">
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">o entrar en modo demostración</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cargando}
+                onClick={() => entrarComo('admin')}
+                className="h-10 w-full"
+              >
+                Entrar como administrador
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cargando}
+                onClick={() => entrarComo('vendedor')}
+                className="h-10 w-full"
+              >
+                Entrar como vendedor
+              </Button>
+            </div>
+
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              Usan los usuarios de prueba del README y el mismo ingreso que el
+              formulario.
+            </p>
+          </div>
         </div>
       </section>
     </main>
