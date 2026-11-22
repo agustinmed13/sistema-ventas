@@ -255,7 +255,10 @@ async function TablaClientes({ filtros }: { filtros: Filtros }) {
                 className={c.activo ? 'hover:bg-muted/50' : 'text-muted-foreground'}
               >
                 <td className="px-3 py-2">
-                  {c.nombre}
+                  {/* El nombre lleva a la ficha del cliente (RF-C3) */}
+                  <Link href={`/clientes/${c.id}`} className="font-medium text-primary hover:underline">
+                    {c.nombre}
+                  </Link>
                   {!c.activo && (
                     <span className="ml-2 inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
                       Inactivo
