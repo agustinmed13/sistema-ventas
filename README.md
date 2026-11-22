@@ -289,11 +289,14 @@ Códigos según `requerimientos.md` de la cátedra.
   `GET /api/productos/{id}/movimientos` y `GET /api/movimientos-stock` (filtros
   `productoId`, `tipo`, `desde`, `hasta`). La existencia de cada producto
   coincide con la suma de sus movimientos (punto 5 de la sección 10.8).
-- **RF-P7 — Categorías (solo API).** `GET /api/categorias` devuelve las activas
-  sin paginar; `POST /api/categorias` y `PATCH /api/categorias/{id}` (solo
-  admin) para alta, renombre y desactivación con `"activa"`. El nombre es único
-  sin distinguir mayúsculas ni tildes (`409 NOMBRE_DUPLICADO`), y no se puede
-  desactivar una categoría con productos activos (`409 CATEGORIA_EN_USO`).
+- **RF-P7 — Categorías.** Solo el administrador, en `/productos/categorias`
+  (botón "Categorías" del catálogo): alta, renombre, desactivación con
+  confirmación y reactivación; cada categoría muestra cuántos productos activos
+  tiene. API: `GET /api/categorias` devuelve las activas sin paginar;
+  `POST /api/categorias` y `PATCH /api/categorias/{id}` con `"activa"`. El
+  nombre es único sin distinguir mayúsculas ni tildes (`409 NOMBRE_DUPLICADO`),
+  y no se puede desactivar una categoría con productos activos
+  (`409 CATEGORIA_EN_USO`).
 
 ### Datos de prueba
 
@@ -323,8 +326,6 @@ Códigos según `requerimientos.md` de la cátedra.
   `POST /api/productos/{id}/movimientos` acepta y valida `observacion`, pero no
   se guarda porque la tabla `movimientos_stock` no tiene esa columna; por eso
   la pantalla no la pide. Agregarla requiere una migración del esquema.
-- **RF-P7 — Categorías:** la API está completa; falta la pantalla de alta,
-  renombre y desactivación.
 
 ### Clientes y cuenta corriente
 

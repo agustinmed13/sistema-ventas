@@ -722,6 +722,35 @@ export async function listarCategorias(usuario: UsuarioSesion) {
     return filas.map(aCategoriaApi);
 }
 
+// Todas las categorías (activas e inactivas), con cuántos productos
+// activos tiene cada una. Solo admin. La usa la pantalla de categorías
+// (/productos/categorias) para poder REACTIVAR una desactivada: la API
+// GET /api/categorias devuelve solo las activas (consigna 11.4), así que
+// esta función no tiene ruta; la página la llama directo (consigna 10.6).
+export async function listarTodasLasCategorias(usuario: UsuarioSesion) {
+    if (usuario.rol !== 'admin') {
+        throw new ApiError(403, 'SIN_PERMISO', 'Solo un administrador puede gestionar categorías.');
+    }
+
+    const filas = await db.select().from(categorias).orderBy(categorias.nombre);
+
+    // Cuántos productos activos tiene cada categoría: es el mismo dato que
+    // revisa modificarCategoria() antes de desactivar (CATEGORIA_EN_USO).
+    // GROUP BY junta los productos por categoría y count() cuenta cada grupo:
+    //   [{ categoriaId: 6, cantidad: 12 }, { categoriaId: 7, cantidad: 6 }, ...]
+    // Las categorías sin productos activos no aparecen: valen 0.
+    const conteos = await db
+        .select({ categoriaId: productos.categoriaId, cantidad: count() })
+        .from(productos)
+        .where(eq(productos.activo, true))
+        .groupBy(productos.categoriaId);
+
+    return filas.map((c) => ({
+        ...aCategoriaApi(c),
+        productosActivos: conteos.find((x) => x.categoriaId === c.id)?.cantidad ?? 0,
+    }));
+}
+
 // POST /api/categorias — alta (RF-P7). Solo admin.
 // datos (sin validar): { "nombre": "Herramientas" }
 export async function crearCategoria(usuario: UsuarioSesion, datos: any) {

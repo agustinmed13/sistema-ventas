@@ -128,3 +128,21 @@ el PATCH usa "activa" y se agregó GET /api/productos/{id}.
 Qué aprendimos: el AGENTS.md es un resumen. Cuando falta un dato, la fuente
 es requerimientos.md, no la intuición del agente. Avisar "esto lo decidí yo"
 no alcanza: hay que ir a buscarlo.
+
+## 22/11 — Una subconsulta que contaba mal (y no daba error)
+
+Qué pasó: para mostrar cuántos productos activos tiene cada categoría, el
+agente escribió una subconsulta SQL dentro del select de categorías. Drizzle
+escribió la columna de afuera como "id" sin el nombre de la tabla, y SQLite
+la interpretó como el id del PRODUCTO (la tabla de adentro). Resultado: todas
+las categorías mostraban "0 productos activos", sin ningún error.
+
+Cómo lo detectamos: al revisar la pantalla, Almacén decía 0 cuando tiene 12.
+Se comparó contra un GROUP BY directo en la base.
+
+Cómo se corrigió: dos consultas simples (las categorías, y un count() con
+GROUP BY por categoría) que se juntan en JavaScript. Es más fácil de leer y
+de explicar que la subconsulta.
+
+Qué aprendimos: compilar y no tener errores no dice que el dato sea correcto.
+Hay que comparar lo que muestra la pantalla con lo que hay en la base.

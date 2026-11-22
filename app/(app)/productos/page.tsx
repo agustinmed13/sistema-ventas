@@ -111,19 +111,24 @@ export default async function ProductosPage({
     );
 }
 
-// "Nuevo producto" solo para el admin (RF-P2). Ocultarlo no es la
-// protección: crearProducto() le responde 403 al vendedor igual.
+// "Categorías" (RF-P7) y "Nuevo producto" (RF-P2), solo para el admin.
+// Ocultarlos no es la protección: el servidor le responde 403 al vendedor igual.
 async function BotonNuevoProducto() {
     const usuario = await obtenerUsuarioActual();
     if (!usuario || usuario.rol !== 'admin') return null;
 
     return (
-        <Button asChild>
-            <Link href="/productos/nuevo">
-                <Plus />
-                Nuevo producto
-            </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+                <Link href="/productos/categorias">Categorías</Link>
+            </Button>
+            <Button asChild>
+                <Link href="/productos/nuevo">
+                    <Plus />
+                    Nuevo producto
+                </Link>
+            </Button>
+        </div>
     );
 }
 
