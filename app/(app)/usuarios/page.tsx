@@ -17,8 +17,11 @@ import Form from 'next/form';
 import { redirect } from 'next/navigation';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import EncabezadoPagina from '@/components/encabezado-pagina';
+import Paginador from '@/components/paginador';
+import Insignia from '@/components/insignia';
+import { CartelCarga, CartelError, CartelVacio, textoDeError } from '@/components/estados';
 import { obtenerUsuarioActual } from '@/lib/auth';
-import { ApiError } from '@/lib/errores';
 import { listarUsuarios } from '@/lib/servicios/usuarios';
 
 type ParametrosURL = { [clave: string]: string | string[] | undefined };
@@ -66,15 +69,14 @@ export default async function UsuariosPage({
 
     return (
         <div className="mx-auto max-w-5xl space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <h1 className="text-2xl font-semibold">Usuarios</h1>
+            <EncabezadoPagina titulo="Usuarios">
                 <Button asChild>
                     <Link href="/usuarios/nuevo">
                         <Plus />
                         Nuevo usuario
                     </Link>
                 </Button>
-            </div>
+            </EncabezadoPagina>
 
             {/* <Form> navega a /usuarios?q=...&activo=... (la URL es el estado).
                 No lleva "page": filtrar vuelve siempre a la página 1. */}
@@ -121,14 +123,7 @@ export default async function UsuariosPage({
                 </div>
             </Form>
 
-            <Suspense
-                key={JSON.stringify(filtros)}
-                fallback={
-                    <p className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
-                        Cargando usuarios...
-                    </p>
-                }
-            >
+            <Suspense key={JSON.stringify(filtros)} fallback={<CartelCarga texto="Cargando usuarios..." />}>
                 <TablaUsuarios filtros={filtros} />
             </Suspense>
         </div>
@@ -140,44 +135,23 @@ async function TablaUsuarios({ filtros }: { filtros: Filtros }) {
     const usuario = await obtenerUsuarioActual();
     if (!usuario) redirect('/login');
 
-    let resultado = null;
-    let mensajeError = '';
+    let resultado;
     try {
         resultado = await listarUsuarios(usuario, filtros);
     } catch (error) {
-        if (error instanceof ApiError) {
-            // 403 para el vendedor, o 422 si un filtro de la URL está mal
-            mensajeError = error.message;
-        } else {
-            console.error(error);
-            mensajeError = 'No se pudieron cargar los usuarios. Probá de nuevo.';
-        }
-    }
-
-    // ─── Estado: error ───
-    if (!resultado) {
-        return (
-            <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                {mensajeError}
-            </p>
-        );
+        // ─── Estado: error ─── (403 para el vendedor, o 422 si un filtro de la URL está mal)
+        const { mensaje, detalles } = textoDeError(error, 'No se pudieron cargar los usuarios. Probá de nuevo.');
+        return <CartelError mensaje={mensaje} detalles={detalles} />;
     }
 
     // ─── Estado: vacío ───
     if (resultado.data.length === 0) {
         return (
-            <p className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
-                {resultado.total === 0
-                    ? 'No hay usuarios con estos filtros.'
-                    : 'Esta página no tiene usuarios.'}
-            </p>
+            <CartelVacio
+                texto={resultado.total === 0 ? 'No hay usuarios con estos filtros.' : 'Esta página no tiene usuarios.'}
+            />
         );
     }
-
-    const { page, pageSize, total } = resultado;
-    const totalPaginas = Math.ceil(total / pageSize);
-    const primera = (page - 1) * pageSize + 1;
-    const ultima = primera + resultado.data.length - 1;
 
     return (
         <div className="space-y-3">
@@ -215,13 +189,9 @@ async function TablaUsuarios({ filtros }: { filtros: Filtros }) {
                                 </td>
                                 <td className="px-3 py-2">
                                     {u.activo ? (
-                                        <span className="inline-flex rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
-                                            Activo
-                                        </span>
+                                        <Insignia variante="activo">Activo</Insignia>
                                     ) : (
-                                        <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                                            Inactivo
-                                        </span>
+                                        <Insignia variante="neutral">Inactivo</Insignia>
                                     )}
                                 </td>
                             </tr>
@@ -230,31 +200,13 @@ async function TablaUsuarios({ filtros }: { filtros: Filtros }) {
                 </table>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <p className="text-muted-foreground">
-                    Mostrando {primera}–{ultima} de {total} · Página {page} de {totalPaginas}
-                </p>
-                <div className="flex gap-2">
-                    {page > 1 ? (
-                        <Button asChild variant="outline" size="sm">
-                            <Link href={urlDePagina(filtros, page - 1)}>Anterior</Link>
-                        </Button>
-                    ) : (
-                        <Button variant="outline" size="sm" disabled>
-                            Anterior
-                        </Button>
-                    )}
-                    {page < totalPaginas ? (
-                        <Button asChild variant="outline" size="sm">
-                            <Link href={urlDePagina(filtros, page + 1)}>Siguiente</Link>
-                        </Button>
-                    ) : (
-                        <Button variant="outline" size="sm" disabled>
-                            Siguiente
-                        </Button>
-                    )}
-                </div>
-            </div>
+            <Paginador
+                page={resultado.page}
+                pageSize={resultado.pageSize}
+                total={resultado.total}
+                cantidadEnPagina={resultado.data.length}
+                urlDePagina={(page) => urlDePagina(filtros, page)}
+            />
         </div>
     );
 }

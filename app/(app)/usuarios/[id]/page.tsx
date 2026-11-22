@@ -12,6 +12,9 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import EncabezadoPagina from '@/components/encabezado-pagina';
+import Insignia from '@/components/insignia';
+import { CartelCarga, CartelError, textoDeError } from '@/components/estados';
 import { obtenerUsuarioActual } from '@/lib/auth';
 import { ApiError } from '@/lib/errores';
 import { obtenerUsuario } from '@/lib/servicios/usuarios';
@@ -31,7 +34,7 @@ export default async function EditarUsuarioPage({ params }: { params: Promise<{ 
             </Button>
 
             {/* Leer el usuario depende de la sesión: va en su propio Suspense */}
-            <Suspense fallback={<p className="text-muted-foreground">Cargando usuario...</p>}>
+            <Suspense fallback={<CartelCarga texto="Cargando usuario..." />}>
                 <ContenidoUsuario id={id} />
             </Suspense>
         </div>
@@ -50,14 +53,8 @@ async function ContenidoUsuario({ id }: { id: string }) {
         // No existe → la página 404 de Next.js
         if (error instanceof ApiError && error.status === 404) notFound();
         // Vendedor → 403: mostramos el mensaje del servidor
-        if (error instanceof ApiError) {
-            return (
-                <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                    {error.message}
-                </p>
-            );
-        }
-        throw error;
+        const { mensaje, detalles } = textoDeError(error, 'No se pudo cargar el usuario. Probá de nuevo.');
+        return <CartelError mensaje={mensaje} detalles={detalles} />;
     }
 
     // RF-U4: un admin no puede desactivarse ni quitarse el rol. La pantalla
@@ -66,14 +63,9 @@ async function ContenidoUsuario({ id }: { id: string }) {
 
     return (
         <>
-            <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-semibold">{usuario.nombre}</h1>
-                {!usuario.activo && (
-                    <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                        Inactivo
-                    </span>
-                )}
-            </div>
+            <EncabezadoPagina titulo={usuario.nombre}>
+                {!usuario.activo && <Insignia variante="neutral">Inactivo</Insignia>}
+            </EncabezadoPagina>
 
             <FormularioUsuario
                 usuario={{ id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol }}

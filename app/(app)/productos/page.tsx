@@ -16,8 +16,11 @@ import Form from 'next/form';
 import { redirect } from 'next/navigation';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import EncabezadoPagina from '@/components/encabezado-pagina';
+import Paginador from '@/components/paginador';
+import Insignia from '@/components/insignia';
+import { CartelCarga, CartelError, CartelVacio, textoDeError } from '@/components/estados';
 import { obtenerUsuarioActual } from '@/lib/auth';
-import { ApiError } from '@/lib/errores';
 import { listarCategorias, listarProductos } from '@/lib/servicios/productos';
 import { formatearImporte } from '@/lib/formato';
 import PestanasProductos from './pestanas-productos';
@@ -79,13 +82,12 @@ export default async function ProductosPage({
 
     return (
         <div className="mx-auto max-w-5xl space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <h1 className="text-2xl font-semibold">Productos</h1>
+            <EncabezadoPagina titulo="Productos">
                 {/* El botón depende del rol, que se lee de la sesión */}
                 <Suspense fallback={null}>
                     <BotonNuevoProducto />
                 </Suspense>
-            </div>
+            </EncabezadoPagina>
 
             {/* Catálogo | Existencias (consigna, sección 4) */}
             <PestanasProductos activa="catalogo" />
@@ -101,14 +103,7 @@ export default async function ProductosPage({
 
             {/* La "key" cambia con los filtros: al filtrar o cambiar de
                 página vuelve a mostrar el cartel de carga. */}
-            <Suspense
-                key={JSON.stringify(filtros)}
-                fallback={
-                    <p className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
-                        Cargando productos...
-                    </p>
-                }
-            >
+            <Suspense key={JSON.stringify(filtros)} fallback={<CartelCarga texto="Cargando productos..." />}>
                 <TablaProductos filtros={filtros} />
             </Suspense>
         </div>
@@ -256,59 +251,26 @@ async function TablaProductos({ filtros }: { filtros: Filtros }) {
     const usuario = await obtenerUsuarioActual();
     if (!usuario) redirect('/login');
 
-    let resultado = null;
-    let mensajeError = '';
-    let detallesError: string[] = [];
+    let resultado;
     try {
         resultado = await listarProductos(usuario, filtros);
     } catch (error) {
-        if (error instanceof ApiError) {
-            // Error esperado: un filtro mal escrito en la URL (422) o un
-            // vendedor pidiendo inactivos (403). Mostramos el mensaje y,
-            // si hay, el detalle de cada campo ("details", sección 11.1),
-            // para que se entienda QUÉ filtro está mal.
-            mensajeError = error.message;
-            detallesError = (error.details ?? []).flatMap((d) =>
-                'mensaje' in d ? [String(d.mensaje)] : []
-            );
-        } else {
-            console.error(error);
-            mensajeError = 'No se pudieron cargar los productos. Probá de nuevo.';
-        }
-    }
-
-    // ─── Estado: error ───
-    if (!resultado) {
-        return (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                <p>{mensajeError}</p>
-                {detallesError.length > 0 && (
-                    <ul className="mt-1 list-disc pl-5">
-                        {detallesError.map((mensaje) => (
-                            <li key={mensaje}>{mensaje}</li>
-                        ))}
-                    </ul>
-                )}
-            </div>
-        );
+        // ─── Estado: error ───
+        // Error esperado: un filtro mal escrito en la URL (422) o un vendedor
+        // pidiendo inactivos (403). textoDeError arma el mensaje y el detalle
+        // de cada campo ("details", sección 11.1).
+        const { mensaje, detalles } = textoDeError(error, 'No se pudieron cargar los productos. Probá de nuevo.');
+        return <CartelError mensaje={mensaje} detalles={detalles} />;
     }
 
     // ─── Estado: vacío ───
     if (resultado.data.length === 0) {
         return (
-            <p className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
-                {resultado.total === 0
-                    ? 'No hay productos con estos filtros.'
-                    : 'Esta página no tiene productos.'}
-            </p>
+            <CartelVacio
+                texto={resultado.total === 0 ? 'No hay productos con estos filtros.' : 'Esta página no tiene productos.'}
+            />
         );
     }
-
-    // ─── Paginado (sección 11.1) ───
-    const { page, pageSize, total } = resultado;
-    const totalPaginas = Math.ceil(total / pageSize);
-    const primera = (page - 1) * pageSize + 1;
-    const ultima = primera + resultado.data.length - 1;
 
     return (
         <div className="space-y-3">
@@ -344,8 +306,8 @@ async function TablaProductos({ filtros }: { filtros: Filtros }) {
                                         {p.descripcion}
                                     </Link>
                                     {!p.activo && (
-                                        <span className="ml-2 inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                                            Inactivo
+                                        <span className="ml-2">
+                                            <Insignia variante="neutral">Inactivo</Insignia>
                                         </span>
                                     )}
                                 </td>
@@ -359,13 +321,10 @@ async function TablaProductos({ filtros }: { filtros: Filtros }) {
                                     pantalla solo lo muestra. */}
                                 <td className="whitespace-nowrap px-3 py-2 text-right">
                                     {p.bajoMinimo ? (
-                                        <span
-                                            className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800"
-                                            title={`Bajo el mínimo de ${p.stockMinimo}`}
-                                        >
-                                            {p.existencia}
-                                            <span className="text-xs font-medium">Bajo mínimo</span>
-                                        </span>
+                                        <Insignia variante="alerta" title={`Bajo el mínimo de ${p.stockMinimo}`}>
+                                            <span className="text-sm font-semibold">{p.existencia}</span>
+                                            Bajo mínimo
+                                        </Insignia>
                                     ) : (
                                         p.existencia
                                     )}
@@ -379,31 +338,14 @@ async function TablaProductos({ filtros }: { filtros: Filtros }) {
                 </table>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <p className="text-muted-foreground">
-                    Mostrando {primera}–{ultima} de {total} · Página {page} de {totalPaginas}
-                </p>
-                <div className="flex gap-2">
-                    {page > 1 ? (
-                        <Button asChild variant="outline" size="sm">
-                            <Link href={urlDePagina(filtros, page - 1)}>Anterior</Link>
-                        </Button>
-                    ) : (
-                        <Button variant="outline" size="sm" disabled>
-                            Anterior
-                        </Button>
-                    )}
-                    {page < totalPaginas ? (
-                        <Button asChild variant="outline" size="sm">
-                            <Link href={urlDePagina(filtros, page + 1)}>Siguiente</Link>
-                        </Button>
-                    ) : (
-                        <Button variant="outline" size="sm" disabled>
-                            Siguiente
-                        </Button>
-                    )}
-                </div>
-            </div>
+            {/* Paginado (sección 11.1): conserva los filtros al cambiar de página */}
+            <Paginador
+                page={resultado.page}
+                pageSize={resultado.pageSize}
+                total={resultado.total}
+                cantidadEnPagina={resultado.data.length}
+                urlDePagina={(page) => urlDePagina(filtros, page)}
+            />
         </div>
     );
 }

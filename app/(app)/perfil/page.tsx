@@ -9,12 +9,13 @@
 import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import { obtenerUsuarioActual } from '@/lib/auth';
+import EncabezadoPagina from '@/components/encabezado-pagina';
 import FormularioPassword from './formulario-password';
 
 export default function PerfilPage() {
     return (
         <div className="mx-auto max-w-3xl space-y-4">
-            <h1 className="text-2xl font-semibold">Mi perfil</h1>
+            <EncabezadoPagina titulo="Mi perfil" />
 
             {/* Leer la sesión depende de cada pedido: va en Suspense */}
             <Suspense fallback={<div className="h-24 rounded-xl border bg-card" />}>

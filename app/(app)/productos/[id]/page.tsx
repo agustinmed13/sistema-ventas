@@ -16,6 +16,10 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import EncabezadoPagina from '@/components/encabezado-pagina';
+import Paginador from '@/components/paginador';
+import Insignia from '@/components/insignia';
+import { CartelCarga, CartelError, CartelVacio, textoDeError } from '@/components/estados';
 import { obtenerUsuarioActual } from '@/lib/auth';
 import { ApiError } from '@/lib/errores';
 import {
@@ -52,7 +56,7 @@ export default async function FichaProductoPage({
             </Button>
 
             {/* Leer el producto depende de la sesión: va en su propio Suspense */}
-            <Suspense fallback={<p className="text-muted-foreground">Cargando producto...</p>}>
+            <Suspense fallback={<CartelCarga texto="Cargando producto..." />}>
                 <ContenidoProducto id={id} />
             </Suspense>
 
@@ -60,7 +64,7 @@ export default async function FichaProductoPage({
                 mostrar el cartel de carga */}
             <Suspense
                 key={pagina ?? '1'}
-                fallback={<p className="text-muted-foreground">Cargando movimientos...</p>}
+                fallback={<CartelCarga texto="Cargando movimientos..." />}
             >
                 <HistorialMovimientos id={id} pagina={pagina} />
             </Suspense>
@@ -86,14 +90,9 @@ async function ContenidoProducto({ id }: { id: string }) {
 
     return (
         <>
-            <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-semibold">{producto.descripcion}</h1>
-                {!producto.activo && (
-                    <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                        Inactivo
-                    </span>
-                )}
-            </div>
+            <EncabezadoPagina titulo={producto.descripcion}>
+                {!producto.activo && <Insignia variante="neutral">Inactivo</Insignia>}
+            </EncabezadoPagina>
 
             {/* ─── Datos (los ven los dos roles) ─── */}
             <dl className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-4 text-sm sm:grid-cols-3">
@@ -116,8 +115,8 @@ async function ContenidoProducto({ id }: { id: string }) {
                         {producto.existencia}
                         {/* RF-P1: misma marca que el catálogo; el dato lo calcula el servidor */}
                         {producto.bajoMinimo && (
-                            <span className="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                                Bajo mínimo
+                            <span className="ml-2">
+                                <Insignia variante="alerta">Bajo mínimo</Insignia>
                             </span>
                         )}
                     </dd>
@@ -177,93 +176,50 @@ async function HistorialMovimientos({ id, pagina }: { id: string; pagina: string
     const usuario = await obtenerUsuarioActual();
     if (!usuario) redirect('/login');
 
-    let resultado = null;
-    let mensajeError = '';
+    let resultado;
     try {
         resultado = await listarMovimientosDeProducto(usuario, id, { page: pagina, pageSize: null });
     } catch (error) {
         // Si el producto no existe, ContenidoProducto ya muestra el 404
         if (error instanceof ApiError && error.status === 404) return null;
-        if (error instanceof ApiError) {
-            mensajeError = error.message; // por ejemplo ?page=abc (422)
-        } else {
-            console.error(error);
-            mensajeError = 'No se pudieron cargar los movimientos. Probá de nuevo.';
-        }
+        // ─── Estado: error ─── (por ejemplo ?page=abc, 422)
+        const { mensaje, detalles } = textoDeError(error, 'No se pudieron cargar los movimientos. Probá de nuevo.');
+        return (
+            <section className="space-y-3 pt-2">
+                <h2 className="text-lg font-semibold">Movimientos</h2>
+                <CartelError mensaje={mensaje} detalles={detalles} />
+            </section>
+        );
     }
 
     return (
         <section className="space-y-3 pt-2">
             <h2 className="text-lg font-semibold">Movimientos</h2>
 
-            {/* ─── Estado: error ─── */}
-            {!resultado && (
-                <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                    {mensajeError}
-                </p>
-            )}
-
             {/* ─── Estado: vacío ─── */}
-            {resultado && resultado.data.length === 0 && (
-                <p className="rounded-xl border bg-card p-6 text-center text-muted-foreground">
-                    {resultado.total === 0 ? 'Este producto todavía no tiene movimientos.' : 'Esta página no tiene movimientos.'}
-                </p>
-            )}
-
-            {resultado && resultado.data.length > 0 && (
+            {resultado.data.length === 0 ? (
+                <CartelVacio
+                    texto={
+                        resultado.total === 0
+                            ? 'Este producto todavía no tiene movimientos.'
+                            : 'Esta página no tiene movimientos.'
+                    }
+                />
+            ) : (
                 <>
                     {/* La misma tabla que la pestaña Existencias, sin la columna Producto */}
                     <TablaMovimientos movimientos={resultado.data} mostrarProducto={false} />
 
-                    <PaginadoMovimientos
-                        id={id}
+                    {/* El mismo paginador que los listados: links a esta ficha con otro ?page= */}
+                    <Paginador
                         page={resultado.page}
-                        totalPaginas={Math.ceil(resultado.total / resultado.pageSize)}
+                        pageSize={resultado.pageSize}
                         total={resultado.total}
+                        cantidadEnPagina={resultado.data.length}
+                        urlDePagina={(page) => `/productos/${id}?page=${page}`}
                     />
                 </>
             )}
         </section>
-    );
-}
-
-// Anterior / Siguiente del historial: links a la misma ficha con otro ?page=
-function PaginadoMovimientos({
-    id,
-    page,
-    totalPaginas,
-    total,
-}: {
-    id: string;
-    page: number;
-    totalPaginas: number;
-    total: number;
-}) {
-    return (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <p className="text-muted-foreground">
-                {total} movimientos · Página {page} de {totalPaginas}
-            </p>
-            <div className="flex gap-2">
-                {page > 1 ? (
-                    <Button asChild variant="outline" size="sm">
-                        <Link href={`/productos/${id}?page=${page - 1}`}>Anterior</Link>
-                    </Button>
-                ) : (
-                    <Button variant="outline" size="sm" disabled>
-                        Anterior
-                    </Button>
-                )}
-                {page < totalPaginas ? (
-                    <Button asChild variant="outline" size="sm">
-                        <Link href={`/productos/${id}?page=${page + 1}`}>Siguiente</Link>
-                    </Button>
-                ) : (
-                    <Button variant="outline" size="sm" disabled>
-                        Siguiente
-                    </Button>
-                )}
-            </div>
-        </div>
     );
 }

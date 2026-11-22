@@ -14,6 +14,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Confirmacion from '@/components/confirmacion';
+import Insignia from '@/components/insignia';
 
 type Props = {
     id: number;
@@ -97,8 +99,8 @@ export default function FilaCategoria({ id, nombre, activa, productosActivos }: 
                     <div className="flex-1">
                         <span className="font-medium">{nombre}</span>
                         {!activa && (
-                            <span className="ml-2 inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-                                Inactiva
+                            <span className="ml-2">
+                                <Insignia variante="neutral">Inactiva</Insignia>
                             </span>
                         )}
                         <p className="text-xs text-muted-foreground">
@@ -132,32 +134,27 @@ export default function FilaCategoria({ id, nombre, activa, productosActivos }: 
                 )}
             </div>
 
-            {/* ─── Confirmación de la baja (sección 8) ─── */}
+            {/* ─── Confirmación de la baja (sección 8), con la caja común ─── */}
             {modo === 'confirmar' && (
-                <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                    <p className="text-sm">
-                        ¿Desactivar «{nombre}»? Deja de ofrecerse al cargar productos; se puede reactivar.
-                        {/* Se adelanta la regla; el servidor la controla igual (409) */}
-                        {productosActivos > 0 &&
-                            ` Ojo: tiene ${productosActivos} producto(s) activo(s), así que el servidor no lo va a permitir.`}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => guardar({ activa: false })}
-                            disabled={enviando}
-                        >
-                            {enviando ? 'Desactivando...' : 'Confirmar'}
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={cancelar} disabled={enviando}>
-                            Cancelar
-                        </Button>
-                    </div>
-                </div>
+                <Confirmacion
+                    pregunta={`¿Desactivar «${nombre}»?`}
+                    explicacion={
+                        // Se adelanta la regla; el servidor la controla igual (409)
+                        productosActivos > 0
+                            ? `Tiene ${productosActivos} producto(s) activo(s), así que el servidor no lo va a permitir: primero movelos o desactivalos.`
+                            : 'Deja de ofrecerse al cargar productos; se puede reactivar.'
+                    }
+                    textoConfirmar="Confirmar"
+                    textoEnviando="Desactivando..."
+                    enviando={enviando}
+                    error={error}
+                    onConfirmar={() => guardar({ activa: false })}
+                    onCancelar={cancelar}
+                />
             )}
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {/* Los errores de renombrar o reactivar (los de la baja van en la caja) */}
+            {error && modo !== 'confirmar' && <p className="text-sm text-destructive">{error}</p>}
         </li>
     );
 }

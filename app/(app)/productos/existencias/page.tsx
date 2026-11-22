@@ -14,8 +14,10 @@ import Link from 'next/link';
 import Form from 'next/form';
 import { redirect } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import EncabezadoPagina from '@/components/encabezado-pagina';
+import Paginador from '@/components/paginador';
+import { CartelCarga, CartelError, CartelVacio, textoDeError } from '@/components/estados';
 import { obtenerUsuarioActual } from '@/lib/auth';
-import { ApiError } from '@/lib/errores';
 import { listarMovimientos, listarProductos } from '@/lib/servicios/productos';
 import PestanasProductos from '../pestanas-productos';
 import TablaMovimientos from '../tabla-movimientos';
@@ -67,7 +69,7 @@ export default async function ExistenciasPage({ searchParams }: { searchParams: 
 
     return (
         <div className="mx-auto max-w-5xl space-y-4">
-            <h1 className="text-2xl font-semibold">Productos</h1>
+            <EncabezadoPagina titulo="Productos" />
             <PestanasProductos activa="existencias" />
 
             {/* El desplegable de productos se lee de la base: va en su Suspense */}
@@ -75,14 +77,7 @@ export default async function ExistenciasPage({ searchParams }: { searchParams: 
                 <FiltrosExistencias filtros={filtros} />
             </Suspense>
 
-            <Suspense
-                key={JSON.stringify(filtros)}
-                fallback={
-                    <p className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
-                        Cargando movimientos...
-                    </p>
-                }
-            >
+            <Suspense key={JSON.stringify(filtros)} fallback={<CartelCarga texto="Cargando movimientos..." />}>
                 <ListaMovimientos filtros={filtros} />
             </Suspense>
         </div>
@@ -174,82 +169,36 @@ async function ListaMovimientos({ filtros }: { filtros: Filtros }) {
     const usuario = await obtenerUsuarioActual();
     if (!usuario) redirect('/login');
 
-    let resultado = null;
-    let mensajeError = '';
-    let detallesError: string[] = [];
+    let resultado;
     try {
         resultado = await listarMovimientos(usuario, filtros);
     } catch (error) {
-        if (error instanceof ApiError) {
-            // Ej: una fecha mal escrita en la URL (422). Mostramos qué campo.
-            mensajeError = error.message;
-            detallesError = (error.details ?? []).flatMap((d) => ('mensaje' in d ? [`${d.campo}: ${d.mensaje}`] : []));
-        } else {
-            console.error(error);
-            mensajeError = 'No se pudieron cargar los movimientos. Probá de nuevo.';
-        }
-    }
-
-    // ─── Estado: error ───
-    if (!resultado) {
-        return (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                <p>{mensajeError}</p>
-                {detallesError.length > 0 && (
-                    <ul className="mt-1 list-disc pl-5">
-                        {detallesError.map((d) => (
-                            <li key={d}>{d}</li>
-                        ))}
-                    </ul>
-                )}
-            </div>
-        );
+        // ─── Estado: error ─── (ej: una fecha mal escrita en la URL, 422)
+        const { mensaje, detalles } = textoDeError(error, 'No se pudieron cargar los movimientos. Probá de nuevo.');
+        return <CartelError mensaje={mensaje} detalles={detalles} />;
     }
 
     // ─── Estado: vacío ───
     if (resultado.data.length === 0) {
         return (
-            <p className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
-                {resultado.total === 0 ? 'No hay movimientos con estos filtros.' : 'Esta página no tiene movimientos.'}
-            </p>
+            <CartelVacio
+                texto={resultado.total === 0 ? 'No hay movimientos con estos filtros.' : 'Esta página no tiene movimientos.'}
+            />
         );
     }
-
-    const { page, pageSize, total } = resultado;
-    const totalPaginas = Math.ceil(total / pageSize);
-    const primera = (page - 1) * pageSize + 1;
-    const ultima = primera + resultado.data.length - 1;
 
     return (
         <div className="space-y-3">
             {/* La misma tabla que la ficha del producto, con la columna Producto */}
             <TablaMovimientos movimientos={resultado.data} mostrarProducto={true} />
 
-            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <p className="text-muted-foreground">
-                    Mostrando {primera}–{ultima} de {total} · Página {page} de {totalPaginas}
-                </p>
-                <div className="flex gap-2">
-                    {page > 1 ? (
-                        <Button asChild variant="outline" size="sm">
-                            <Link href={urlDePagina(filtros, page - 1)}>Anterior</Link>
-                        </Button>
-                    ) : (
-                        <Button variant="outline" size="sm" disabled>
-                            Anterior
-                        </Button>
-                    )}
-                    {page < totalPaginas ? (
-                        <Button asChild variant="outline" size="sm">
-                            <Link href={urlDePagina(filtros, page + 1)}>Siguiente</Link>
-                        </Button>
-                    ) : (
-                        <Button variant="outline" size="sm" disabled>
-                            Siguiente
-                        </Button>
-                    )}
-                </div>
-            </div>
+            <Paginador
+                page={resultado.page}
+                pageSize={resultado.pageSize}
+                total={resultado.total}
+                cantidadEnPagina={resultado.data.length}
+                urlDePagina={(page) => urlDePagina(filtros, page)}
+            />
         </div>
     );
 }

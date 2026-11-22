@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import Confirmacion from '@/components/confirmacion';
 
 type Props = {
     usuarioId: number;
@@ -103,47 +104,35 @@ export default function AccionesUsuario({ usuarioId, nombre, activo, esUnoMismo 
                 </div>
             )}
 
-            {/* ─── Confirmación abierta ─── */}
+            {/* ─── Confirmación abierta (la caja común) ─── */}
             {confirmando === 'estado' && (
-                <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                    <div>
-                        <p className="font-medium">¿Desactivar a {nombre}?</p>
-                        <p className="text-sm text-muted-foreground">
-                            No va a poder entrar al sistema, y si tiene la sesión abierta queda afuera. No se
-                            borra: se puede reactivar.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        <Button variant="destructive" onClick={cambiarEstado} disabled={enviando}>
-                            {enviando ? 'Desactivando...' : 'Confirmar'}
-                        </Button>
-                        <Button variant="outline" onClick={cancelar} disabled={enviando}>
-                            Cancelar
-                        </Button>
-                    </div>
-                </div>
+                <Confirmacion
+                    pregunta={`¿Desactivar a ${nombre}?`}
+                    explicacion="No va a poder entrar al sistema, y si tiene la sesión abierta queda afuera. No se borra: se puede reactivar."
+                    textoConfirmar="Confirmar"
+                    textoEnviando="Desactivando..."
+                    enviando={enviando}
+                    error={error}
+                    onConfirmar={cambiarEstado}
+                    onCancelar={cancelar}
+                />
             )}
 
             {confirmando === 'password' && (
-                <div className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                    <div>
-                        <p className="font-medium">¿Restablecer la contraseña de {nombre}?</p>
-                        <p className="text-sm text-muted-foreground">
-                            Su contraseña actual deja de funcionar y se genera una temporal nueva.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        <Button variant="destructive" onClick={restablecer} disabled={enviando}>
-                            {enviando ? 'Restableciendo...' : 'Confirmar'}
-                        </Button>
-                        <Button variant="outline" onClick={cancelar} disabled={enviando}>
-                            Cancelar
-                        </Button>
-                    </div>
-                </div>
+                <Confirmacion
+                    pregunta={`¿Restablecer la contraseña de ${nombre}?`}
+                    explicacion="Su contraseña actual deja de funcionar y se genera una temporal nueva."
+                    textoConfirmar="Confirmar"
+                    textoEnviando="Restableciendo..."
+                    enviando={enviando}
+                    error={error}
+                    onConfirmar={restablecer}
+                    onCancelar={cancelar}
+                />
             )}
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {/* Error de reactivar (los de las confirmaciones van adentro de la caja) */}
+            {error && confirmando === 'nada' && <p className="text-sm text-destructive">{error}</p>}
 
             {/* ─── Botones (ocultos mientras hay una confirmación abierta) ─── */}
             {confirmando === 'nada' && (

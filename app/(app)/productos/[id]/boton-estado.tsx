@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import Confirmacion from '@/components/confirmacion';
 
 type Props = {
     productoId: number;
@@ -68,31 +69,20 @@ export default function BotonEstado({ productoId, descripcion, activo }: Props) 
         );
     }
 
-    // Confirmación (sección 8: las bajas se confirman)
+    // Confirmación (sección 8: las bajas se confirman), con la caja común
     return (
-        <div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
-            <div>
-                <p className="font-medium">¿Dar de baja «{descripcion}»?</p>
-                <p className="text-sm text-muted-foreground">
-                    Deja de ofrecerse en ventas, pero no se borra: conserva su historial y se puede reactivar.
-                </p>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <div className="flex flex-wrap gap-2">
-                <Button variant="destructive" onClick={cambiarEstado} disabled={enviando}>
-                    {enviando ? 'Dando de baja...' : 'Confirmar baja'}
-                </Button>
-                <Button
-                    variant="outline"
-                    onClick={() => {
-                        setConfirmando(false);
-                        setError('');
-                    }}
-                    disabled={enviando}
-                >
-                    Cancelar
-                </Button>
-            </div>
-        </div>
+        <Confirmacion
+            pregunta={`¿Dar de baja «${descripcion}»?`}
+            explicacion="Deja de ofrecerse en ventas, pero no se borra: conserva su historial y se puede reactivar."
+            textoConfirmar="Confirmar baja"
+            textoEnviando="Dando de baja..."
+            enviando={enviando}
+            error={error}
+            onConfirmar={cambiarEstado}
+            onCancelar={() => {
+                setConfirmando(false);
+                setError('');
+            }}
+        />
     );
 }

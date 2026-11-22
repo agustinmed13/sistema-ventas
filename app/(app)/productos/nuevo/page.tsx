@@ -13,6 +13,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import EncabezadoPagina from '@/components/encabezado-pagina';
+import { CartelCarga, CartelError } from '@/components/estados';
 import { obtenerUsuarioActual } from '@/lib/auth';
 import { listarCategorias } from '@/lib/servicios/productos';
 import FormularioProducto from '../formulario-producto';
@@ -26,9 +28,9 @@ export default function NuevoProductoPage() {
                     Volver al catálogo
                 </Link>
             </Button>
-            <h1 className="text-2xl font-semibold">Nuevo producto</h1>
+            <EncabezadoPagina titulo="Nuevo producto" />
 
-            <Suspense fallback={<p className="text-muted-foreground">Cargando...</p>}>
+            <Suspense fallback={<CartelCarga texto="Cargando..." />}>
                 <Contenido />
             </Suspense>
         </div>
@@ -40,11 +42,7 @@ async function Contenido() {
     if (!usuario) redirect('/login');
 
     if (usuario.rol !== 'admin') {
-        return (
-            <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                Solo un administrador puede dar de alta productos.
-            </p>
-        );
+        return <CartelError mensaje="Solo un administrador puede dar de alta productos." />;
     }
 
     const categorias = await listarCategorias(usuario);

@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import EncabezadoPagina from '@/components/encabezado-pagina';
 import FormularioUsuario from '../formulario-usuario';
 
 export default function NuevoUsuarioPage() {
@@ -20,7 +21,7 @@ export default function NuevoUsuarioPage() {
                     Volver al listado
                 </Link>
             </Button>
-            <h1 className="text-2xl font-semibold">Nuevo usuario</h1>
+            <EncabezadoPagina titulo="Nuevo usuario" />
             <FormularioUsuario />
         </div>
     );

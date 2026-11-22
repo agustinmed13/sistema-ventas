@@ -16,8 +16,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import EncabezadoPagina from '@/components/encabezado-pagina';
+import { CartelCarga, CartelError, CartelVacio, textoDeError } from '@/components/estados';
 import { obtenerUsuarioActual } from '@/lib/auth';
-import { ApiError } from '@/lib/errores';
 import { listarTodasLasCategorias } from '@/lib/servicios/productos';
 import NuevaCategoria from './nueva-categoria';
 import FilaCategoria from './fila-categoria';
@@ -31,15 +32,9 @@ export default function CategoriasPage() {
                     Volver al catálogo
                 </Link>
             </Button>
-            <h1 className="text-2xl font-semibold">Categorías</h1>
+            <EncabezadoPagina titulo="Categorías" />
 
-            <Suspense
-                fallback={
-                    <p className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
-                        Cargando categorías...
-                    </p>
-                }
-            >
+            <Suspense fallback={<CartelCarga texto="Cargando categorías..." />}>
                 <ListaCategorias />
             </Suspense>
         </div>
@@ -56,19 +51,8 @@ async function ListaCategorias() {
         categorias = await listarTodasLasCategorias(usuario);
     } catch (error) {
         // ─── Estado: error (403 para el vendedor que escribe la URL) ───
-        if (error instanceof ApiError) {
-            return (
-                <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                    {error.message}
-                </p>
-            );
-        }
-        console.error(error);
-        return (
-            <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                No se pudieron cargar las categorías. Probá de nuevo.
-            </p>
-        );
+        const { mensaje, detalles } = textoDeError(error, 'No se pudieron cargar las categorías. Probá de nuevo.');
+        return <CartelError mensaje={mensaje} detalles={detalles} />;
     }
 
     return (
@@ -77,9 +61,7 @@ async function ListaCategorias() {
 
             {/* ─── Estado: vacío ─── */}
             {categorias.length === 0 ? (
-                <p className="rounded-xl border bg-card p-8 text-center text-muted-foreground">
-                    Todavía no hay categorías.
-                </p>
+                <CartelVacio texto="Todavía no hay categorías." />
             ) : (
                 <ul className="divide-y rounded-xl border bg-card">
                     {categorias.map((c) => (
