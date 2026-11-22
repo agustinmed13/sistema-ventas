@@ -295,6 +295,21 @@ async function buscarProductoApi(id: number) {
     return aProductoApi(fila);
 }
 
+// GET /api/productos/{id} — un producto (RF-P1, sección 11.4). Los dos roles.
+// idTexto: el {id} de la URL tal cual llega ("63").
+export async function obtenerProducto(usuario: UsuarioSesion, idTexto: string) {
+    // Los dos roles pueden consultar el catálogo: no hay chequeo de rol.
+    void usuario;
+
+    // Si el id no es un número válido, ese producto no existe (404).
+    const id = Number(idTexto);
+    if (!Number.isInteger(id) || id <= 0) {
+        throw new ApiError(404, 'NO_ENCONTRADO', 'No existe ese producto.');
+    }
+
+    return buscarProductoApi(id);
+}
+
 // ═════════════════════════════════════════════════════════════
 // crearProducto — RF-P2 (alta de producto)
 //
@@ -656,15 +671,15 @@ export async function modificarProducto(
 // ═════════════════════════════════════════════════════════════
 // CATEGORÍAS — RF-P7
 //
-// Formato en la API: { "id": 1, "nombre": "Herramientas", "activo": true }
-// La columna de la base se llama "activa"; en la API usamos "activo"
-// porque la sección 11.1 define las bajas lógicas con "activo": false.
+// Formato en la API: { "id": 1, "nombre": "Herramientas", "activa": true }
+// Se llama "activa" (no "activo") porque así lo nombra la consigna en
+// PATCH /api/categorias/{id} (sección 11.4), igual que la columna.
 // ═════════════════════════════════════════════════════════════
 
 type FilaCategoria = typeof categorias.$inferSelect;
 
 function aCategoriaApi(fila: FilaCategoria) {
-    return { id: fila.id, nombre: fila.nombre, activo: fila.activa };
+    return { id: fila.id, nombre: fila.nombre, activa: fila.activa };
 }
 
 // El nombre es único sin importar mayúsculas ni tildes (RF-P7):
@@ -690,36 +705,19 @@ async function verificarNombreLibre(nombre: string, idPropio: number | null) {
 }
 
 // GET /api/categorias — los dos roles (el formulario de productos las necesita).
-// Filtros: activo (por defecto true; false o todos solo admin) y paginación.
-export async function listarCategorias(
-    usuario: UsuarioSesion,
-    filtros: { activo: string | null; page: string | null; pageSize: string | null }
-) {
-    const detalles: DetalleError[] = [];
-
-    const activo = leerFiltroActivo(filtros.activo, usuario, detalles);
-    const { page, pageSize } = leerPaginacion(filtros.page, filtros.pageSize, detalles);
-
-    lanzarErroresValidacion(detalles);
-
-    // "todos" no filtra: un where(undefined) es una consulta sin WHERE.
-    const condicion =
-        activo === 'todos' ? undefined : eq(categorias.activa, activo === 'true');
-
-    const [conteo] = await db
-        .select({ total: count() })
-        .from(categorias)
-        .where(condicion);
+// Sección 11.4: "todas las categorías activas, sin paginar". Son pocas,
+// así que se devuelve la lista entera, ordenada por nombre.
+export async function listarCategorias(usuario: UsuarioSesion) {
+    // Los dos roles pueden consultarlas: no hay chequeo de rol.
+    void usuario;
 
     const filas = await db
         .select()
         .from(categorias)
-        .where(condicion)
-        .orderBy(categorias.nombre)
-        .limit(pageSize)
-        .offset((page - 1) * pageSize);
+        .where(eq(categorias.activa, true))
+        .orderBy(categorias.nombre);
 
-    return { data: filas.map(aCategoriaApi), page, pageSize, total: conteo.total };
+    return filas.map(aCategoriaApi);
 }
 
 // POST /api/categorias — alta (RF-P7). Solo admin.
@@ -752,7 +750,7 @@ export async function crearCategoria(usuario: UsuarioSesion, datos: any) {
 }
 
 // PATCH /api/categorias/{id} — renombrar o desactivar (RF-P7). Solo admin.
-// datos (sin validar): cualquiera de { "nombre": "...", "activo": false }
+// datos (sin validar): cualquiera de { "nombre": "...", "activa": false }
 export async function modificarCategoria(
     usuario: UsuarioSesion,
     idTexto: string,
@@ -775,11 +773,12 @@ export async function modificarCategoria(
         }
     }
 
-    if (datos.activo !== undefined) {
-        if (typeof datos.activo !== 'boolean') {
-            detalles.push({ campo: 'activo', mensaje: 'Tiene que ser true o false.' });
+    // "activa", como la nombra la consigna (sección 11.4)
+    if (datos.activa !== undefined) {
+        if (typeof datos.activa !== 'boolean') {
+            detalles.push({ campo: 'activa', mensaje: 'Tiene que ser true o false.' });
         } else {
-            cambios.activa = datos.activo; // "activo" en la API → columna "activa"
+            cambios.activa = datos.activa;
         }
     }
 

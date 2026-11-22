@@ -1,5 +1,6 @@
-// PATCH /api/productos/[id] — editar o dar de baja un producto (RF-P2, RF-P3).
-// Solo admin.
+// /api/productos/[id]
+//   GET    un producto, los dos roles (RF-P1)
+//   PATCH  editar o dar de baja, solo admin (RF-P2, RF-P3)
 //
 // La carpeta [id] con corchetes le dice a Next.js que esa parte de la URL
 // es variable: /api/productos/63 llega acá con id = "63".
@@ -12,7 +13,30 @@
 
 import { obtenerUsuarioActual } from '@/lib/auth';
 import { ApiError, manejarError } from '@/lib/errores';
-import { modificarProducto } from '@/lib/servicios/productos';
+import { modificarProducto, obtenerProducto } from '@/lib/servicios/productos';
+
+// GET /api/productos/63 → el producto, o 404 si no existe
+export async function GET(
+    request: Request,
+    // En Next.js 16, params es una promesa: hay que esperarla con await
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        // Toda ruta exige sesión (sección 11.1)
+        const usuario = await obtenerUsuarioActual();
+
+        if (!usuario) {
+            throw new ApiError(401, 'NO_AUTENTICADO', 'Tenés que iniciar sesión.');
+        }
+
+        const { id } = await params;
+        const producto = await obtenerProducto(usuario, id);
+
+        return Response.json(producto);
+    } catch (error) {
+        return manejarError(error);
+    }
+}
 
 export async function PATCH(
     request: Request,

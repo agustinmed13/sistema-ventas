@@ -52,7 +52,8 @@ export default function PaginaLogin() {
       const respuesta = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, contrasena }),
+        // La API espera "password" (consigna, sección 11.3)
+        body: JSON.stringify({ email, password: contrasena }),
       });
 
       // respuesta.ok es true para los códigos 200-299.

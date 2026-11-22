@@ -1,5 +1,5 @@
 // PATCH /api/categorias/[id] — renombrar o desactivar una categoría (RF-P7).
-// Solo admin. Recibe cualquiera de { "nombre": "...", "activo": false }.
+// Solo admin. Recibe cualquiera de { "nombre": "...", "activa": false }.
 // Desactivar una categoría con productos activos → 409 CATEGORIA_EN_USO.
 //
 // Adaptador fino (AGENTS.md sección 3): las reglas están en

@@ -7,8 +7,8 @@ import { obtenerUsuarioActual } from '@/lib/auth';
 import { ApiError, manejarError } from '@/lib/errores';
 import { crearCategoria, listarCategorias } from '@/lib/servicios/productos';
 
-// GET /api/categorias?activo=todos&page=1&pageSize=20
-export async function GET(request: Request) {
+// GET /api/categorias — las activas, sin paginar (sección 11.4)
+export async function GET() {
     try {
         // Toda ruta exige sesión (sección 11.1)
         const usuario = await obtenerUsuarioActual();
@@ -17,15 +17,9 @@ export async function GET(request: Request) {
             throw new ApiError(401, 'NO_AUTENTICADO', 'Tenés que iniciar sesión.');
         }
 
-        const parametros = new URL(request.url).searchParams;
+        const categorias = await listarCategorias(usuario);
 
-        const resultado = await listarCategorias(usuario, {
-            activo: parametros.get('activo'),
-            page: parametros.get('page'),
-            pageSize: parametros.get('pageSize'),
-        });
-
-        return Response.json(resultado);
+        return Response.json(categorias);
     } catch (error) {
         return manejarError(error);
     }

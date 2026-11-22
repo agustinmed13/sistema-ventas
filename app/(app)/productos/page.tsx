@@ -116,16 +116,11 @@ async function FiltrosCatalogo({ filtros }: { filtros: Filtros }) {
     const usuario = await obtenerUsuarioActual();
     if (!usuario) redirect('/login');
 
-    // Las categorías activas, para el desplegable. pageSize 100 = todas.
+    // Las categorías activas, para el desplegable.
     // Si fallara, el filtro queda solo con "Todas" y la tabla sigue andando.
     let categorias: { id: number; nombre: string }[] = [];
     try {
-        const resultado = await listarCategorias(usuario, {
-            activo: null,
-            page: null,
-            pageSize: '100',
-        });
-        categorias = resultado.data;
+        categorias = await listarCategorias(usuario);
     } catch (error) {
         console.error(error);
     }

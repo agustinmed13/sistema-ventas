@@ -1,7 +1,8 @@
 // POST /api/auth/login — iniciar sesión (RF-U1)
 // Es la ÚNICA ruta pública: no exige sesión (sección 11.1).
 //
-// Recibe: { "email": "admin@mostrador.com", "contrasena": "..." }
+// Recibe: { "email": "admin@mostrador.com", "password": "..." }
+// El campo se llama "password" porque así lo pide la consigna (sección 11.3).
 // Responde 200: { id, nombre, email, rol }
 //
 // Adaptador fino (AGENTS.md sección 3): lee el cuerpo, llama al servicio
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
       throw new ApiError(400, 'JSON_INVALIDO', 'Se esperaba un objeto JSON.');
     }
 
-    const usuario = await iniciarSesion(cuerpo.email, cuerpo.contrasena);
+    const usuario = await iniciarSesion(cuerpo.email, cuerpo.password);
     return Response.json(usuario);
   } catch (error) {
     return manejarError(error);

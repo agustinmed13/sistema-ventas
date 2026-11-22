@@ -35,7 +35,8 @@ export async function iniciarSesion(email: unknown, contrasena: unknown) {
     detalles.push({ campo: 'email', mensaje: 'Es obligatorio.' });
   }
   if (typeof contrasena !== 'string' || contrasena.trim() === '') {
-    detalles.push({ campo: 'contrasena', mensaje: 'Es obligatoria.' });
+    // "password": el nombre del campo en la API (consigna, sección 11.3)
+    detalles.push({ campo: 'password', mensaje: 'Es obligatoria.' });
   }
   // La segunda parte del if le confirma a TypeScript que son textos
   if (detalles.length > 0 || typeof email !== 'string' || typeof contrasena !== 'string') {

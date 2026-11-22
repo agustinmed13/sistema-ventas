@@ -107,3 +107,24 @@ Qué aprendimos: una prueba que "da bien" también puede estar mal armada.
 Si un resultado sorprende (un duplicado que no se detecta), hay que mirar
 los datos guardados, no solo la respuesta. Y probar contra una base
 compartida deja rastros: conviene usar nombres que se reconozcan como prueba.
+
+## 22/11 — Categorías hechas según un resumen, no según la consigna
+
+Qué pasó: el AGENTS.md (sección 5.1) no trae el formato de las categorías.
+En vez de ir a la consigna, el agente lo decidió solo: GET /api/categorias
+paginado con filtro "activo", y PATCH con el campo "activo". Además faltaba
+GET /api/productos/{id}. La consigna (requerimientos.md, sección 11.4) dice
+otra cosa: GET devuelve "todas las categorías activas, sin paginar", y el
+PATCH recibe "activa". El agente había avisado que el formato era una
+decisión propia, pero no lo verificó.
+
+Cómo lo detectamos: al empezar usuarios, el agente leyó la sección 11 de
+requerimientos.md (es pública) para no inventar los nombres, y comparó
+contra lo ya hecho.
+
+Cómo se corrigió: listarCategorias devuelve la lista de activas sin paginar,
+el PATCH usa "activa" y se agregó GET /api/productos/{id}.
+
+Qué aprendimos: el AGENTS.md es un resumen. Cuando falta un dato, la fuente
+es requerimientos.md, no la intuición del agente. Avisar "esto lo decidí yo"
+no alcanza: hay que ir a buscarlo.
