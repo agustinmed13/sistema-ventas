@@ -19,7 +19,7 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import Campo from '@/components/campo';
 
 type Props = {
     productoId: number;
@@ -105,18 +105,13 @@ export default function FormularioMovimiento({ productoId, existencia, motivosIn
         setEnviando(false);
     }
 
-    function errorDe(campo: string) {
-        if (!errores[campo]) return null;
-        return <p className="text-xs text-destructive">{errores[campo]}</p>;
-    }
-
+    // Cada campo usa <Campo> (etiqueta + input + error, components/campo.tsx)
     return (
         <form onSubmit={registrar} className="space-y-4 rounded-xl border bg-card p-4">
             <h2 className="font-medium">Registrar ingreso o egreso</h2>
 
             <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-1">
-                    <Label htmlFor="tipo">Tipo</Label>
+                <Campo id="tipo" etiqueta="Tipo" error={errores.tipo}>
                     <select
                         id="tipo"
                         value={tipo}
@@ -126,10 +121,9 @@ export default function FormularioMovimiento({ productoId, existencia, motivosIn
                         <option value="ingreso">Ingreso (suma)</option>
                         <option value="egreso">Egreso (resta)</option>
                     </select>
-                </div>
+                </Campo>
 
-                <div className="space-y-1">
-                    <Label htmlFor="cantidad">Cantidad</Label>
+                <Campo id="cantidad" etiqueta="Cantidad" error={errores.cantidad}>
                     <Input
                         id="cantidad"
                         inputMode="numeric"
@@ -138,11 +132,9 @@ export default function FormularioMovimiento({ productoId, existencia, motivosIn
                         onChange={(e) => setCantidadTexto(e.target.value)}
                         aria-invalid={errores.cantidad ? true : undefined}
                     />
-                    {errorDe('cantidad')}
-                </div>
+                </Campo>
 
-                <div className="space-y-1">
-                    <Label htmlFor="motivo">Motivo</Label>
+                <Campo id="motivo" etiqueta="Motivo" error={errores.motivo}>
                     <select
                         id="motivo"
                         value={motivo}
@@ -155,8 +147,7 @@ export default function FormularioMovimiento({ productoId, existencia, motivosIn
                             </option>
                         ))}
                     </select>
-                    {errorDe('motivo')}
-                </div>
+                </Campo>
             </div>
 
             {errorGeneral && <p className="text-sm text-destructive">{errorGeneral}</p>}

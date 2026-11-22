@@ -10,7 +10,7 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import Campo from '@/components/campo';
 
 export default function NuevaCategoria() {
     const router = useRouter();
@@ -57,23 +57,24 @@ export default function NuevaCategoria() {
     }
 
     return (
-        <form onSubmit={crear} className="space-y-2 rounded-xl border bg-card p-4">
-            <Label htmlFor="nombre-nueva">Nueva categoría</Label>
-            <div className="flex flex-wrap gap-2">
-                <Input
-                    id="nombre-nueva"
-                    placeholder="Ferretería"
-                    value={nombre}
-                    onChange={(e) => setNombre(e.target.value)}
-                    aria-invalid={error ? true : undefined}
-                    className="max-w-xs flex-1"
-                />
-                <Button type="submit" disabled={enviando}>
-                    {enviando ? 'Creando...' : 'Crear'}
-                </Button>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            {resultado && <p className="text-sm text-primary">{resultado}</p>}
+        <form onSubmit={crear} className="rounded-xl border bg-card p-4">
+            {/* <Campo> común: etiqueta, el input con su botón al lado, y el error */}
+            <Campo id="nombre-nueva" etiqueta="Nueva categoría" error={error}>
+                <div className="flex flex-wrap gap-2">
+                    <Input
+                        id="nombre-nueva"
+                        placeholder="Ferretería"
+                        value={nombre}
+                        onChange={(e) => setNombre(e.target.value)}
+                        aria-invalid={error ? true : undefined}
+                        className="max-w-xs flex-1"
+                    />
+                    <Button type="submit" disabled={enviando}>
+                        {enviando ? 'Creando...' : 'Crear'}
+                    </Button>
+                </div>
+            </Campo>
+            {resultado && <p className="mt-2 text-sm text-primary">{resultado}</p>}
         </form>
     );
 }

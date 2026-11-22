@@ -19,7 +19,7 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import Campo from '@/components/campo';
 
 type UsuarioExistente = {
     id: number;
@@ -114,16 +114,11 @@ export default function FormularioUsuario({ usuario, esUnoMismo = false }: Props
         setEnviando(false);
     }
 
-    function errorDe(campo: string) {
-        if (!errores[campo]) return null;
-        return <p className="text-xs text-destructive">{errores[campo]}</p>;
-    }
-
+    // Cada campo usa <Campo> (etiqueta + input + ayuda + error, components/campo.tsx)
     return (
         <form onSubmit={guardar} className="space-y-4 rounded-xl border bg-card p-4">
             <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                    <Label htmlFor="nombre">Nombre</Label>
+                <Campo id="nombre" etiqueta="Nombre" error={errores.nombre}>
                     <Input
                         id="nombre"
                         autoFocus
@@ -131,11 +126,9 @@ export default function FormularioUsuario({ usuario, esUnoMismo = false }: Props
                         onChange={(e) => setNombre(e.target.value)}
                         aria-invalid={errores.nombre ? true : undefined}
                     />
-                    {errorDe('nombre')}
-                </div>
+                </Campo>
 
-                <div className="space-y-1">
-                    <Label htmlFor="email">Email</Label>
+                <Campo id="email" etiqueta="Email" error={errores.email}>
                     <Input
                         id="email"
                         type="email"
@@ -144,13 +137,16 @@ export default function FormularioUsuario({ usuario, esUnoMismo = false }: Props
                         onChange={(e) => setEmail(e.target.value)}
                         aria-invalid={errores.email ? true : undefined}
                     />
-                    {errorDe('email')}
-                </div>
+                </Campo>
 
-                <div className="space-y-1">
-                    <Label htmlFor="rol">Rol</Label>
-                    {/* Un admin no puede quitarse su propio rol (consigna 11.3).
-                        El servidor lo rechaza igual con 422; acá se adelanta. */}
+                {/* Un admin no puede quitarse su propio rol (consigna 11.3).
+                    El servidor lo rechaza igual con 422; acá se adelanta. */}
+                <Campo
+                    id="rol"
+                    etiqueta="Rol"
+                    error={errores.rol}
+                    ayuda={esUnoMismo ? 'No podés quitarte tu propio rol de administrador.' : undefined}
+                >
                     <select
                         id="rol"
                         value={rol}
@@ -161,17 +157,15 @@ export default function FormularioUsuario({ usuario, esUnoMismo = false }: Props
                         <option value="vendedor">Vendedor</option>
                         <option value="admin">Administrador</option>
                     </select>
-                    {esUnoMismo && (
-                        <p className="text-xs text-muted-foreground">
-                            No podés quitarte tu propio rol de administrador.
-                        </p>
-                    )}
-                    {errorDe('rol')}
-                </div>
+                </Campo>
 
                 {!esEdicion && (
-                    <div className="space-y-1">
-                        <Label htmlFor="password">Contraseña temporal</Label>
+                    <Campo
+                        id="password"
+                        etiqueta="Contraseña temporal"
+                        error={errores.password}
+                        ayuda={`Mínimo ${LARGO_MINIMO_PASSWORD} caracteres. El usuario la cambia desde su perfil.`}
+                    >
                         <Input
                             id="password"
                             type="password"
@@ -180,11 +174,7 @@ export default function FormularioUsuario({ usuario, esUnoMismo = false }: Props
                             onChange={(e) => setPassword(e.target.value)}
                             aria-invalid={errores.password ? true : undefined}
                         />
-                        <p className="text-xs text-muted-foreground">
-                            Mínimo {LARGO_MINIMO_PASSWORD} caracteres. El usuario la cambia desde su perfil.
-                        </p>
-                        {errorDe('password')}
-                    </div>
+                    </Campo>
                 )}
             </div>
 

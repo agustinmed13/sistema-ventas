@@ -20,7 +20,8 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import Campo from '@/components/campo';
+import CampoImporte from '@/components/campo-importe';
 // Convierte "12.500,50" (pesos escritos) en 1250050 (centavos). Es de
 // Agustín; la usamos igual que el formulario de clientes.
 import { pesosACentavos } from '@/app/(app)/ventas/nueva/pesos';
@@ -156,16 +157,11 @@ export default function FormularioProducto({ categorias, producto }: Props) {
         setEnviando(false);
     }
 
-    function errorDe(campo: string) {
-        if (!errores[campo]) return null;
-        return <p className="text-xs text-destructive">{errores[campo]}</p>;
-    }
-
+    // Cada campo usa <Campo> (etiqueta + input + ayuda + error, components/campo.tsx)
     return (
         <form onSubmit={guardar} className="space-y-4 rounded-xl border bg-card p-4">
             <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-1">
-                    <Label htmlFor="codigo">Código</Label>
+                <Campo id="codigo" etiqueta="Código" error={errores.codigo}>
                     <Input
                         id="codigo"
                         autoFocus
@@ -174,11 +170,9 @@ export default function FormularioProducto({ categorias, producto }: Props) {
                         onChange={(e) => setCodigo(e.target.value)}
                         aria-invalid={errores.codigo ? true : undefined}
                     />
-                    {errorDe('codigo')}
-                </div>
+                </Campo>
 
-                <div className="space-y-1 sm:col-span-2">
-                    <Label htmlFor="descripcion">Descripción</Label>
+                <Campo id="descripcion" etiqueta="Descripción" error={errores.descripcion} className="sm:col-span-2">
                     <Input
                         id="descripcion"
                         placeholder="Yerba mate 1 kg"
@@ -186,13 +180,11 @@ export default function FormularioProducto({ categorias, producto }: Props) {
                         onChange={(e) => setDescripcion(e.target.value)}
                         aria-invalid={errores.descripcion ? true : undefined}
                     />
-                    {errorDe('descripcion')}
-                </div>
+                </Campo>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-1">
-                    <Label htmlFor="categoriaId">Categoría</Label>
+                <Campo id="categoriaId" etiqueta="Categoría" error={errores.categoriaId}>
                     <select
                         id="categoriaId"
                         value={categoriaId}
@@ -206,24 +198,24 @@ export default function FormularioProducto({ categorias, producto }: Props) {
                             </option>
                         ))}
                     </select>
-                    {errorDe('categoriaId')}
-                </div>
+                </Campo>
 
-                <div className="space-y-1">
-                    <Label htmlFor="precio">Precio de venta ($)</Label>
-                    <Input
+                {/* Campo de importe común: se escribe en pesos con el "$" adelante */}
+                <Campo id="precio" etiqueta="Precio de venta" error={errores.precio}>
+                    <CampoImporte
                         id="precio"
-                        inputMode="decimal"
-                        placeholder="12.500,50"
-                        value={precioTexto}
-                        onChange={(e) => setPrecioTexto(e.target.value)}
-                        aria-invalid={errores.precio ? true : undefined}
+                        valor={precioTexto}
+                        onCambio={setPrecioTexto}
+                        invalido={errores.precio !== undefined}
                     />
-                    {errorDe('precio')}
-                </div>
+                </Campo>
 
-                <div className="space-y-1">
-                    <Label htmlFor="stockMinimo">Stock mínimo</Label>
+                <Campo
+                    id="stockMinimo"
+                    etiqueta="Stock mínimo"
+                    error={errores.stockMinimo}
+                    ayuda="Por debajo, el catálogo lo marca."
+                >
                     <Input
                         id="stockMinimo"
                         inputMode="numeric"
@@ -231,15 +223,18 @@ export default function FormularioProducto({ categorias, producto }: Props) {
                         onChange={(e) => setStockMinimoTexto(e.target.value)}
                         aria-invalid={errores.stockMinimo ? true : undefined}
                     />
-                    <p className="text-xs text-muted-foreground">Por debajo, el catálogo lo marca.</p>
-                    {errorDe('stockMinimo')}
-                </div>
+                </Campo>
             </div>
 
             {/* Solo en el alta: la existencia inicial entra como un ingreso */}
             {!esEdicion && (
-                <div className="space-y-1 sm:w-1/3">
-                    <Label htmlFor="stockInicial">Stock inicial (opcional)</Label>
+                <Campo
+                    id="stockInicial"
+                    etiqueta="Stock inicial (opcional)"
+                    error={errores.stockInicial}
+                    ayuda="Se registra como un ingreso con motivo «Stock inicial»."
+                    className="sm:w-1/3"
+                >
                     <Input
                         id="stockInicial"
                         inputMode="numeric"
@@ -248,11 +243,7 @@ export default function FormularioProducto({ categorias, producto }: Props) {
                         onChange={(e) => setStockInicialTexto(e.target.value)}
                         aria-invalid={errores.stockInicial ? true : undefined}
                     />
-                    <p className="text-xs text-muted-foreground">
-                        Se registra como un ingreso con motivo «Stock inicial».
-                    </p>
-                    {errorDe('stockInicial')}
-                </div>
+                </Campo>
             )}
 
             {errorGeneral && <p className="text-sm text-destructive">{errorGeneral}</p>}

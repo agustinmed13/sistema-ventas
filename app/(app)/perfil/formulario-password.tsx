@@ -12,7 +12,7 @@
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import Campo from '@/components/campo';
 
 // Mismo mínimo que el servidor (consigna 11.3). Si cambia, cambiarlo también
 // en LARGO_MINIMO_PASSWORD de lib/servicios/usuarios.ts.
@@ -77,17 +77,12 @@ export default function FormularioPassword() {
         setEnviando(false);
     }
 
-    function errorDe(campo: string) {
-        if (!errores[campo]) return null;
-        return <p className="text-xs text-destructive">{errores[campo]}</p>;
-    }
-
+    // Cada campo usa <Campo> (etiqueta + input + ayuda + error, components/campo.tsx)
     return (
         <form onSubmit={guardar} className="space-y-4 rounded-xl border bg-card p-4">
             <h2 className="font-medium">Cambiar contraseña</h2>
 
-            <div className="space-y-1">
-                <Label htmlFor="actual">Contraseña actual</Label>
+            <Campo id="actual" etiqueta="Contraseña actual" error={errores.actual}>
                 <Input
                     id="actual"
                     type="password"
@@ -96,12 +91,15 @@ export default function FormularioPassword() {
                     onChange={(e) => setActual(e.target.value)}
                     aria-invalid={errores.actual ? true : undefined}
                 />
-                {errorDe('actual')}
-            </div>
+            </Campo>
 
             <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1">
-                    <Label htmlFor="nueva">Contraseña nueva</Label>
+                <Campo
+                    id="nueva"
+                    etiqueta="Contraseña nueva"
+                    error={errores.nueva}
+                    ayuda={`Mínimo ${LARGO_MINIMO_PASSWORD} caracteres.`}
+                >
                     <Input
                         id="nueva"
                         type="password"
@@ -110,14 +108,9 @@ export default function FormularioPassword() {
                         onChange={(e) => setNueva(e.target.value)}
                         aria-invalid={errores.nueva ? true : undefined}
                     />
-                    <p className="text-xs text-muted-foreground">
-                        Mínimo {LARGO_MINIMO_PASSWORD} caracteres.
-                    </p>
-                    {errorDe('nueva')}
-                </div>
+                </Campo>
 
-                <div className="space-y-1">
-                    <Label htmlFor="repetir">Repetir la nueva</Label>
+                <Campo id="repetir" etiqueta="Repetir la nueva" error={errores.repetir}>
                     <Input
                         id="repetir"
                         type="password"
@@ -126,8 +119,7 @@ export default function FormularioPassword() {
                         onChange={(e) => setRepetir(e.target.value)}
                         aria-invalid={errores.repetir ? true : undefined}
                     />
-                    {errorDe('repetir')}
-                </div>
+                </Campo>
             </div>
 
             {errorGeneral && <p className="text-sm text-destructive">{errorGeneral}</p>}
