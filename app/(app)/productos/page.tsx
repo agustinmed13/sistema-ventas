@@ -14,6 +14,7 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import Form from 'next/form';
 import { redirect } from 'next/navigation';
+import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { obtenerUsuarioActual } from '@/lib/auth';
 import { ApiError } from '@/lib/errores';
@@ -77,7 +78,13 @@ export default async function ProductosPage({
 
     return (
         <div className="mx-auto max-w-5xl space-y-4">
-            <h1 className="text-2xl font-semibold">Productos</h1>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h1 className="text-2xl font-semibold">Productos</h1>
+                {/* El botón depende del rol, que se lee de la sesión */}
+                <Suspense fallback={null}>
+                    <BotonNuevoProducto />
+                </Suspense>
+            </div>
 
             {/* Los filtros necesitan la lista de categorías y el rol del
                 usuario, que se leen en el servidor: por eso van en su
@@ -101,6 +108,22 @@ export default async function ProductosPage({
                 <TablaProductos filtros={filtros} />
             </Suspense>
         </div>
+    );
+}
+
+// "Nuevo producto" solo para el admin (RF-P2). Ocultarlo no es la
+// protección: crearProducto() le responde 403 al vendedor igual.
+async function BotonNuevoProducto() {
+    const usuario = await obtenerUsuarioActual();
+    if (!usuario || usuario.rol !== 'admin') return null;
+
+    return (
+        <Button asChild>
+            <Link href="/productos/nuevo">
+                <Plus />
+                Nuevo producto
+            </Link>
+        </Button>
     );
 }
 
@@ -304,7 +327,13 @@ async function TablaProductos({ filtros }: { filtros: Filtros }) {
                             >
                                 <td className="whitespace-nowrap px-3 py-2 font-mono">{p.codigo}</td>
                                 <td className="px-3 py-2">
-                                    {p.descripcion}
+                                    {/* Cada producto lleva a su ficha */}
+                                    <Link
+                                        href={`/productos/${p.id}`}
+                                        className="font-medium text-primary hover:underline"
+                                    >
+                                        {p.descripcion}
+                                    </Link>
                                     {!p.activo && (
                                         <span className="ml-2 inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
                                             Inactivo
