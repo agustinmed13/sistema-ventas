@@ -36,3 +36,34 @@ respuesta. Si se cambian dos de los tres, el error no aparece al compilar:
 aparece recién al usar la pantalla. Y nos sirvió de prueba de que la
 validación del servidor funciona: rechazó un pedido mal armado en lugar de
 ignorar el campo en silencio.
+
+## 21/11 — El alta de clientes volvió a decidir cómo se guarda el documento (Majo)
+
+Qué pasó: al adaptar clientes a la sección 5.1, el agente hizo que el alta
+guardara el número de documento tal como llegaba, con puntos ("28.456.123").
+Pero esa decisión ya estaba tomada en otro lugar: lib/formato.ts dice que en
+la base el documento se guarda SIN puntos ni guiones, y formatearDocumento()
+se los agrega al mostrarlo. El alta la volvió a decidir por su cuenta, y
+distinto. La regla quedó en dos lugares que no coincidían.
+
+Por qué importa: además de mostrarse mal, el índice único de la base compara
+textos, y para la base "28.456.123" y "28456123" son distintos. Si entraban
+los dos, la misma persona quedaba cargada dos veces sin que saltara
+DOCUMENTO_DUPLICADO.
+
+Cómo lo detectamos: leyendo lib/formato.ts mientras escribíamos los pagos,
+no por un error en pantalla. El cliente de prueba "Mariana López" había
+quedado guardado con puntos.
+
+Cómo se corrigió: en lib/servicios/clientes.ts, validarDatosCliente() limpia
+el documento con limpiarDocumento() antes de guardarlo. Está en el SERVICIO,
+no en el formulario, así que vale igual para el alta y la edición, y aunque
+alguien le pegue directo a la API. Además, verificarDocumentoUnico() compara
+los documentos sin puntos, por si quedaba alguna fila vieja. Mariana se
+corrigió con un PATCH y verificamos en la base que no queda ninguna fila con
+puntos ni guiones.
+
+Qué aprendimos: el error no fue "guardar puntos", fue tener la misma regla
+decidida en dos lugares (punto 7 de la lista de control de la sección 10.8:
+cada regla vive en un solo lugar). Antes de decidir cómo se guarda un dato,
+hay que buscar si el proyecto ya lo decidió.
