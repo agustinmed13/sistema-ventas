@@ -13,6 +13,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { formatearImporte } from '@/lib/formato';
 // Convierte "15.000,50" (pesos escritos) en 1500050 (centavos). Es de
@@ -26,6 +27,7 @@ type Props = {
 
 // El recibo que devuelve la API (sección 5.1), solo lo que mostramos
 type Recibo = {
+  id: number;
   numeroRecibo: string;
   importe: number;
   saldoCliente: number;
@@ -116,6 +118,10 @@ export default function FormularioPago({ clienteId, saldo }: Props) {
           <p>
             Pagó {formatearImporte(recibo.importe)}. Saldo restante: {formatearImporte(recibo.saldoCliente)}.
           </p>
+          {/* RF-C5: el recibo numerado e imprimible */}
+          <Link href={`/clientes/recibos/${recibo.id}`} className="font-medium underline underline-offset-2">
+            Ver e imprimir recibo
+          </Link>
         </div>
       )}
 
