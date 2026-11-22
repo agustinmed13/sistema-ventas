@@ -146,3 +146,64 @@ de explicar que la subconsulta.
 
 Qué aprendimos: compilar y no tener errores no dice que el dato sea correcto.
 Hay que comparar lo que muestra la pantalla con lo que hay en la base.
+
+## 22/11 — Un archivo temporal dentro del módulo de otra integrante
+
+Qué pasó: en el menú lateral, Clientes y Usuarios tiraban 404 porque esas
+pantallas todavía no existían. El agente propuso dejar carteles de "en
+desarrollo" para que no se viera un 404 crudo, y escribió uno en
+app/(app)/usuarios/page.tsx, que por el reparto es de Jazmín.
+
+Cómo lo detectamos: al hacer git pull con la pantalla real de Jazmín ya
+subida. Git abortó con "untracked working tree files would be overwritten by
+merge". No pisó nada: se frenó antes.
+
+Cómo se corrigió: borrando el archivo temporal, que ya no hacía falta, y
+volviendo a hacer el pull.
+
+Qué aprendimos: dos cosas. Un archivo que no está commiteado no existe para
+nadie más y no está sincronizado con nada; Git lo trata como ajeno y se niega
+a tocarlo. Y crear archivos fuera del módulo propio tiene un costo, aunque sea
+temporal: si lo hacemos igual, hay que avisar y borrarlo apenas llegue la
+versión real.
+
+## 22/11 — Comandos de npm documentados sin mirar el package.json
+
+Qué pasó: al actualizar docs/base-de-datos.md, el agente escribió que la base
+se arranca con "npm run db:push" y que se mira con "npm run db:studio". Ninguno
+de los dos existe en nuestro package.json. Los asumió porque son los habituales
+en proyectos con Drizzle, en lugar de abrir el archivo y leer cuáles tenemos.
+
+Cómo lo detectamos: revisando el documento contra el proyecto real, antes de
+entregarlo.
+
+Cómo se corrigió: con los comandos que sí existen, "npm run db:migrate" y
+"npm run db:seed", y "npx drizzle-kit studio" para ver los datos.
+
+Qué aprendimos: la documentación también hay que verificarla contra el código,
+no solo el código contra la consigna. Un comando mal documentado hace perder
+tiempo a quien lo sigue, y en la defensa queda peor que no haberlo escrito.
+
+## 22/11 — El mismo error del contrato, otra vez: el seed quedó con la forma vieja
+
+Qué pasó: cuando adaptamos el cuerpo de POST /api/facturas a la sección 11.6
+(la forma de pago pasó a ir anidada dentro de "pago"), corregimos la pantalla
+de nueva venta pero no db/seed.ts, que también llama a crearFactura(). El seed
+siguió mandando formaPago y montoRecibidoCentavos sueltos arriba.
+
+Cómo lo detectamos: corriendo el seed. Dijo "solo se pudieron crear 0 facturas
+en 300 intentos" y "300 ventas descartadas: VALIDACION". Hay que leer esos
+números: el resumen terminaba igual con "Verificación OK", porque con cero
+facturas los invariantes se cumplen de manera trivial.
+
+Cómo se corrigió: armando el cuerpo con la forma nueva, { clienteId, items,
+pago: { forma, montoRecibido, tarjeta } }. Con eso el seed creó las 50
+facturas y descartó 3 por LIMITE_CREDITO_EXCEDIDO, que es el servicio
+aplicando la regla 7.
+
+Qué aprendimos: es el mismo error que ya habíamos anotado el 21/11, repetido
+porque arreglamos dos de los tres lugares. El seed no es un script aparte: es
+un cliente más del servicio, igual que una pantalla o una ruta. Antes de dar
+por cerrado un cambio de contrato hay que buscar TODOS los que llaman a esa
+función, scripts incluidos. También aprendimos a desconfiar de un "OK" final
+cuando los números de arriba dicen otra cosa.
