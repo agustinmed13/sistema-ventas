@@ -1,4 +1,4 @@
-// Servicio de PAGOS — RF-C5
+// Servicio de PAGOS — RF-C5 (registrar el pago y reimprimir el recibo)
 //
 // Capa de servicios (AGENTS.md sección 3): ACÁ VIVEN LAS REGLAS DE LOS PAGOS.
 // No sabe nada de HTTP: la ruta app/api/clientes/[id]/pagos solo lee el
@@ -11,9 +11,9 @@
 //   regla 11 → el pago registra quién lo cobró y cuándo
 //   AGENTS.md sección 3 → pago + crédito en UNA transacción
 
-import { eq, max } from 'drizzle-orm';
+import { eq, asc, max } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { clientes, pagos, movimientosCuenta } from '@/db/schema';
+import { clientes, usuarios, pagos, movimientosCuenta } from '@/db/schema';
 import { ApiError, type DetalleError } from '@/lib/errores';
 import { formatearNumeroFactura } from '@/lib/formato';
 import { calcularSaldoCliente } from '@/lib/servicios/clientes';
@@ -225,4 +225,84 @@ export async function registrarPago(usuario: UsuarioSesion, clienteIdTexto: stri
   });
 
   return recibo;
+}
+
+// ═════════════════════════════════════════════════════════════
+// obtenerPago — RF-C5 (reimprimir el recibo)
+//
+// pagoIdTexto: el [id] de la URL, sin validar
+//
+// Devuelve EL MISMO OBJETO que registrarPago (sección 11.5), para que el
+// recibo reimpreso sea idéntico al original:
+// { id, numeroRecibo, fecha, cliente: {id, nombre}, importe, medio,
+//   usuario: {id, nombre}, saldoCliente }
+//
+// saldoCliente es el saldo que le quedó al cliente JUSTO DESPUÉS de este
+// pago, no el de hoy. Si fuera el de hoy, el mismo recibo diría cosas
+// distintas según el día en que se reimprime.
+//
+// Los dos roles pueden consultar: no hay chequeo de rol.
+// ═════════════════════════════════════════════════════════════
+export async function obtenerPago(usuario: UsuarioSesion, pagoIdTexto: string) {
+  // ═══ 1. VALIDAR ═══
+  // Un id que no es número no puede existir: 404, igual que si no estuviera.
+  const pagoId = Number(pagoIdTexto);
+  if (!Number.isInteger(pagoId) || pagoId < 1) {
+    throw new ApiError(404, 'NO_ENCONTRADO', 'El pago no existe.');
+  }
+
+  // ═══ 2. PERMISO ═══
+  void usuario;
+
+  // ═══ 3. REGLAS ═══
+
+  // El pago, con el nombre del cliente y de quien lo cobró.
+  // innerJoin = "traé también la fila relacionada de la otra tabla":
+  // el cliente del pago y el usuario que lo registró (regla 11).
+  const [fila] = await db
+    .select({
+      pago: pagos,
+      cliente: { id: clientes.id, nombre: clientes.nombre },
+      cobradoPor: { id: usuarios.id, nombre: usuarios.nombre },
+    })
+    .from(pagos)
+    .innerJoin(clientes, eq(pagos.clienteId, clientes.id))
+    .innerJoin(usuarios, eq(pagos.usuarioId, usuarios.id))
+    .where(eq(pagos.id, pagoId));
+
+  if (!fila) {
+    throw new ApiError(404, 'NO_ENCONTRADO', 'El pago no existe.');
+  }
+
+  // Saldo del cliente justo después de este pago (regla 7).
+  // Recorremos su cuenta corriente en orden cronológico, sumando débitos y
+  // restando créditos, y paramos en el movimiento de este pago. Es la misma
+  // cuenta que el saldo acumulado de obtenerCuentaCorriente().
+  const movimientos = await db
+    .select()
+    .from(movimientosCuenta)
+    .where(eq(movimientosCuenta.clienteId, fila.cliente.id))
+    .orderBy(asc(movimientosCuenta.fecha), asc(movimientosCuenta.id));
+
+  let saldo = 0;
+  for (const mov of movimientos) {
+    if (mov.tipo === 'debito') {
+      saldo = saldo + mov.importeCentavos;
+    } else {
+      saldo = saldo - mov.importeCentavos;
+    }
+    if (mov.pagoId === pagoId) break; // llegamos a este pago: cortamos acá
+  }
+
+  // ═══ 4. DEVOLVER ═══ el mismo JSON que registrarPago
+  return {
+    id: fila.pago.id,
+    numeroRecibo: formatearNumeroRecibo(fila.pago.numeroRecibo),
+    fecha: fila.pago.fecha,
+    cliente: fila.cliente,
+    importe: fila.pago.importeCentavos,
+    medio: medioAApi(fila.pago.medio),
+    usuario: fila.cobradoPor,
+    saldoCliente: saldo,
+  };
 }
