@@ -16,7 +16,7 @@
 // son los de las columnas de la base (tipoDocumento, numeroDocumento...).
 // La traducción se hace en un solo lugar: la función aRespuesta(), más abajo.
 
-import { eq, sql } from 'drizzle-orm';
+import { eq, asc, sql } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { clientes, movimientosCuenta } from '@/db/schema';
 import { ApiError, type DetalleError } from '@/lib/errores';
@@ -434,4 +434,165 @@ export async function crearCliente(usuario: UsuarioSesion, datos: any) {
   // ═══ 4. DEVOLVER ═══
   // Un cliente recién creado no tiene movimientos: su saldo es 0 (regla 7)
   return aRespuesta(filas[0], 0);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Busca un cliente por el id que viene en la URL, o lanza 404.
+// El id llega como texto ("12"). Number("abc") da NaN y
+// Number.isInteger(NaN) es false: un id que no es número no puede
+// existir, así que respondemos 404 igual que si no estuviera.
+// ─────────────────────────────────────────────────────────────
+async function buscarClienteOFallar(idTexto: string) {
+  const id = Number(idTexto);
+  if (!Number.isInteger(id) || id < 1) {
+    throw new ApiError(404, 'NO_ENCONTRADO', 'El cliente no existe.');
+  }
+  const [cliente] = await db.select().from(clientes).where(eq(clientes.id, id));
+  if (!cliente) {
+    throw new ApiError(404, 'NO_ENCONTRADO', 'El cliente no existe.');
+  }
+  return cliente;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Convierte un día "AAAA-MM-DD" de Argentina al instante UTC en que
+// EMPIEZA ese día (sección 11.1: los filtros por día son en hora argentina).
+//   "2026-11-21" → 2026-11-21 a las 00:00 en Argentina (UTC−3)
+//                → "2026-11-21T03:00:00.000Z" en UTC
+// Devuelve null si el texto no tiene el formato correcto.
+// Es la misma conversión que usa listarFacturas en facturas.ts.
+// ─────────────────────────────────────────────────────────────
+function inicioDelDiaArgentina(dia: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return null;
+  const fecha = new Date(dia + 'T00:00:00-03:00');
+  if (isNaN(fecha.getTime())) return null; // por ejemplo "2026-13-45"
+  return fecha;
+}
+
+// ═════════════════════════════════════════════════════════════
+// obtenerCuentaCorriente — RF-C4
+//
+// clienteIdTexto: el [id] de la URL, sin validar
+// filtros (sin validar, de la URL):
+//   desde   AAAA-MM-DD, opcional (día de Argentina, incluido)
+//   hasta   AAAA-MM-DD, opcional (día de Argentina, incluido)
+//
+// Devuelve (AGENTS.md sección 5.1):
+// {
+//   cliente: { id, nombre },
+//   saldoAnterior,   lo que debía ANTES de "desde" (0 si no hay desde)
+//   movimientos: [ { fecha, tipo, importe, descripcion, facturaId,
+//                    pagoId, saldo }, ... ]   en orden cronológico
+//   saldo            el saldo al final del período
+// }
+//
+// Cada renglón trae el SALDO ACUMULADO: cuánto debía el cliente justo
+// después de ese movimiento. Es como el extracto de un banco.
+//
+// Los dos roles pueden consultar: no hay chequeo de rol.
+// ═════════════════════════════════════════════════════════════
+type FiltrosCuenta = {
+  desde: string | null;
+  hasta: string | null;
+};
+
+export async function obtenerCuentaCorriente(
+  usuario: UsuarioSesion,
+  clienteIdTexto: string,
+  filtros: FiltrosCuenta
+) {
+  // ═══ 1. VALIDAR ═══
+  const detalles: DetalleError[] = [];
+
+  // desde: el período empieza a las 00:00 de ese día en Argentina
+  let inicio: string | null = null;
+  if (filtros.desde !== null) {
+    const fecha = inicioDelDiaArgentina(filtros.desde);
+    if (fecha === null) {
+      detalles.push({ campo: 'desde', mensaje: 'Tiene que tener el formato AAAA-MM-DD.' });
+    } else {
+      inicio = fecha.toISOString();
+    }
+  }
+
+  // hasta: el período termina ANTES de las 00:00 del día SIGUIENTE, así
+  // el día "hasta" queda incluido completo.
+  let fin: string | null = null;
+  if (filtros.hasta !== null) {
+    const fecha = inicioDelDiaArgentina(filtros.hasta);
+    if (fecha === null) {
+      detalles.push({ campo: 'hasta', mensaje: 'Tiene que tener el formato AAAA-MM-DD.' });
+    } else {
+      const UN_DIA_MS = 24 * 60 * 60 * 1000;
+      fin = new Date(fecha.getTime() + UN_DIA_MS).toISOString();
+    }
+  }
+
+  // Las fechas ISO se pueden comparar como texto: "2026-11-21..." < "2026-11-22..."
+  if (inicio !== null && fin !== null && inicio >= fin) {
+    detalles.push({ campo: 'hasta', mensaje: 'No puede ser anterior a "desde".' });
+  }
+
+  if (detalles.length > 0) {
+    throw new ApiError(422, 'VALIDACION', 'Hay campos con errores.', detalles);
+  }
+
+  // ═══ 2. PERMISO ═══
+  // Admin y vendedor pueden ver la cuenta corriente.
+  void usuario;
+
+  // ═══ 3. REGLAS ═══
+  const cliente = await buscarClienteOFallar(clienteIdTexto);
+
+  // Todos los movimientos del cliente, del más viejo al más nuevo.
+  // Si dos tienen la misma fecha, desempata el id (el que se grabó primero).
+  const todos = await db
+    .select()
+    .from(movimientosCuenta)
+    .where(eq(movimientosCuenta.clienteId, cliente.id))
+    .orderBy(asc(movimientosCuenta.fecha), asc(movimientosCuenta.id));
+
+  // Recorremos los movimientos en orden y los repartimos en tres grupos:
+  //   - ANTES de "desde"   → no se muestran, pero se suman en saldoAnterior
+  //   - DENTRO del período → se muestran, cada uno con su saldo acumulado
+  //   - DESPUÉS de "hasta" → se ignoran
+  // El saldo se va acumulando con la regla 7: débito suma, crédito resta.
+  let saldoAnterior = 0;
+  let saldo = 0;
+  const movimientos = [];
+
+  for (const mov of todos) {
+    // Después del período: no cuenta
+    if (fin !== null && mov.fecha >= fin) continue;
+
+    // Débito suma a la deuda, crédito la baja (regla 7)
+    let cambio = mov.importeCentavos;
+    if (mov.tipo === 'credito') cambio = -mov.importeCentavos;
+
+    if (inicio !== null && mov.fecha < inicio) {
+      // Antes del período: solo se acumula en el saldo anterior
+      saldoAnterior = saldoAnterior + cambio;
+      saldo = saldoAnterior;
+    } else {
+      // Dentro del período: se muestra con el saldo acumulado hasta acá
+      saldo = saldo + cambio;
+      movimientos.push({
+        fecha: mov.fecha,
+        tipo: mov.tipo,
+        importe: mov.importeCentavos, // sección 5.1: sin sufijo Centavos
+        descripcion: mov.descripcion,
+        facturaId: mov.facturaId,
+        pagoId: mov.pagoId,
+        saldo,
+      });
+    }
+  }
+
+  // ═══ 4. DEVOLVER ═══
+  return {
+    cliente: { id: cliente.id, nombre: cliente.nombre },
+    saldoAnterior,
+    movimientos,
+    saldo, // sin "hasta", es el saldo actual del cliente
+  };
 }
