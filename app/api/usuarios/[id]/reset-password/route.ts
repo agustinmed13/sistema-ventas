@@ -3,11 +3,11 @@
 // que se muestra UNA sola vez (consigna, sección 11.3).
 //
 // Adaptador fino (AGENTS.md sección 3): las reglas están en
-// restablecerContrasena(), en lib/servicios/usuarios.ts.
+// restablecerPassword(), en lib/servicios/usuarios.ts.
 
 import { obtenerUsuarioActual } from '@/lib/auth';
 import { ApiError, manejarError } from '@/lib/errores';
-import { restablecerContrasena } from '@/lib/servicios/usuarios';
+import { restablecerPassword } from '@/lib/servicios/usuarios';
 
 export async function POST(
     request: Request,
@@ -21,7 +21,7 @@ export async function POST(
         }
 
         const { id } = await params;
-        const resultado = await restablecerContrasena(usuario, id);
+        const resultado = await restablecerPassword(usuario, id);
 
         return Response.json(resultado);
     } catch (error) {

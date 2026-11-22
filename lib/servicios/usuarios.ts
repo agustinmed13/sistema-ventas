@@ -240,12 +240,13 @@ export async function crearUsuario(usuario: UsuarioSesion, datos: any) {
     await verificarEmailLibre(email, null);
 
     // La contraseña nunca se guarda: se guarda su hash.
-    const contrasenaHash = await bcrypt.hash(datos.password, COSTO_BCRYPT);
+    const passwordHash = await bcrypt.hash(datos.password, COSTO_BCRYPT);
 
     // Una sola tabla: no hace falta transacción.
     const [nuevo] = await db
         .insert(usuarios)
-        .values({ nombre, email, rol, contrasenaHash, activo: true, creadoEn: new Date().toISOString() })
+        // "contrasenaHash" es el nombre de la columna en db/schema.ts
+        .values({ nombre, email, rol, contrasenaHash: passwordHash, activo: true, creadoEn: new Date().toISOString() })
         .returning();
 
     // ═══ 4. DEVOLVER ═══
@@ -340,11 +341,11 @@ export async function modificarUsuario(usuario: UsuarioSesion, idTexto: string, 
 }
 
 // ═════════════════════════════════════════════════════════════
-// restablecerContrasena — POST /api/usuarios/{id}/reset-password (RF-U5).
+// restablecerPassword — POST /api/usuarios/{id}/reset-password (RF-U5).
 // Solo admin. Genera una contraseña temporal nueva y la devuelve UNA vez:
 // después solo queda su hash y nadie puede volver a verla.
 // ═════════════════════════════════════════════════════════════
-export async function restablecerContrasena(usuario: UsuarioSesion, idTexto: string) {
+export async function restablecerPassword(usuario: UsuarioSesion, idTexto: string) {
     // ═══ 1. VALIDAR ═══
     const id = leerId(idTexto);
 
@@ -360,21 +361,22 @@ export async function restablecerContrasena(usuario: UsuarioSesion, idTexto: str
     // 6 bytes al azar → 12 caracteres hexadecimales (ej. "3f9a0c71b2de").
     // randomBytes usa el generador seguro del sistema, no Math.random().
     const passwordTemporal = randomBytes(6).toString('hex');
-    const contrasenaHash = await bcrypt.hash(passwordTemporal, COSTO_BCRYPT);
+    const passwordHash = await bcrypt.hash(passwordTemporal, COSTO_BCRYPT);
 
-    await db.update(usuarios).set({ contrasenaHash }).where(eq(usuarios.id, id));
+    // "contrasenaHash" es el nombre de la columna en db/schema.ts
+    await db.update(usuarios).set({ contrasenaHash: passwordHash }).where(eq(usuarios.id, id));
 
     // ═══ 4. DEVOLVER ═══ (sección 11.3: 200 con { passwordTemporal })
     return { passwordTemporal };
 }
 
 // ═════════════════════════════════════════════════════════════
-// cambiarContrasena — PUT /api/auth/password (RF-U5). Los dos roles:
+// cambiarPassword — PUT /api/auth/password (RF-U5). Los dos roles:
 // cada usuario cambia LA SUYA, por eso no recibe un id.
 //
 // datos (sin validar): { "actual": "...", "nueva": "..." }
 // ═════════════════════════════════════════════════════════════
-export async function cambiarContrasena(usuario: UsuarioSesion, datos: any) {
+export async function cambiarPassword(usuario: UsuarioSesion, datos: any) {
     // ═══ 1. VALIDAR ═══
     const detalles: DetalleError[] = [];
 
@@ -410,8 +412,8 @@ export async function cambiarContrasena(usuario: UsuarioSesion, datos: any) {
         ]);
     }
 
-    const contrasenaHash = await bcrypt.hash(datos.nueva, COSTO_BCRYPT);
-    await db.update(usuarios).set({ contrasenaHash }).where(eq(usuarios.id, usuario.id));
+    const passwordHash = await bcrypt.hash(datos.nueva, COSTO_BCRYPT);
+    await db.update(usuarios).set({ contrasenaHash: passwordHash }).where(eq(usuarios.id, usuario.id));
 
     // La ruta responde 204 (sin cuerpo): no hay nada que devolver.
 }

@@ -158,13 +158,19 @@ export default function MarcoApp({ nombre, rol, children }: Props) {
 
                     {/* ml-auto empuja todo lo que sigue hacia la derecha. */}
                     <div className="ml-auto flex items-center gap-3">
-                        <div className="text-right leading-tight">
+                        {/* El nombre lleva al perfil, donde cada uno cambia su
+                            contraseña (RF-U5). */}
+                        <Link
+                            href="/perfil"
+                            title="Mi perfil"
+                            className="rounded-md px-2 py-1 text-right leading-tight hover:bg-muted"
+                        >
                             {/* truncate: si el nombre es largo, lo corta con "..." (importante a 360px) */}
                             <p className="max-w-[140px] truncate text-sm font-medium">{nombre}</p>
                             <p className="text-xs text-muted-foreground">
                                 {rol === 'admin' ? 'Administrador' : 'Vendedor'}
                             </p>
-                        </div>
+                        </Link>
                         <Button variant="outline" size="sm" onClick={salir} disabled={saliendo}>
                             <LogOut />
                             {saliendo ? 'Saliendo...' : 'Salir'}

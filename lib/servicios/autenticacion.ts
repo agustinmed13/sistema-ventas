@@ -49,7 +49,7 @@ export async function iniciarSesion(email: unknown, password: unknown) {
   const emailNormalizado = email.trim().toLowerCase();
 
   // 3. Buscar al usuario. Esta consulta trae el hash de la contraseña
-  //    porque hay que compararlo (la otra que lo lee es cambiarContrasena,
+  //    porque hay que compararlo (la otra que lo lee es cambiarPassword,
   //    en usuarios.ts). El hash se usa acá adentro y nunca sale de esta
   //    función.
   const filas = await db.select().from(usuarios).where(eq(usuarios.email, emailNormalizado));
@@ -64,7 +64,8 @@ export async function iniciarSesion(email: unknown, password: unknown) {
   if (usuario) {
     hash = usuario.contrasenaHash;
   }
-  const contrasenaCorrecta = await verificarContrasena(password, hash);
+  // verificarContrasena es de lib/auth.ts (ese archivo no se toca)
+  const passwordCorrecta = await verificarContrasena(password, hash);
 
   // 4. Tres formas de fallar, UNA sola respuesta:
   //    - el usuario no existe
@@ -75,7 +76,7 @@ export async function iniciarSesion(email: unknown, password: unknown) {
   //    mensaje no se puede distinguir nada.
   //    El inactivo es 401 y no 403: 403 sería "te reconozco pero no podés",
   //    y eso ya revelaría que la cuenta existe.
-  if (!usuario || !contrasenaCorrecta || !usuario.activo) {
+  if (!usuario || !passwordCorrecta || !usuario.activo) {
     throw new ApiError(401, 'CREDENCIALES_INVALIDAS', 'Email o contraseña incorrectos.');
   }
 
