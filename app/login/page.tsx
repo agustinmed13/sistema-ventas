@@ -34,7 +34,8 @@ export default function PaginaLogin() {
 
   // Estado del formulario. Cada vez que cambia, React vuelve a dibujar.
   const [email, setEmail] = useState('');
-  const [contrasena, setContrasena] = useState('');
+  // "password", como el campo que espera la API (consigna, sección 11.3)
+  const [password, setPassword] = useState('');
   const [error, setError] = useState(''); // mensaje a mostrar ('' = ninguno)
   const [cargando, setCargando] = useState(false); // true mientras espera al servidor
 
@@ -52,8 +53,7 @@ export default function PaginaLogin() {
       const respuesta = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // La API espera "password" (consigna, sección 11.3)
-        body: JSON.stringify({ email, password: contrasena }),
+        body: JSON.stringify({ email, password }),
       });
 
       // respuesta.ok es true para los códigos 200-299.
@@ -168,13 +168,13 @@ export default function PaginaLogin() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="contrasena">Contraseña</Label>
+              <Label htmlFor="password">Contraseña</Label>
               <Input
-                id="contrasena"
+                id="password"
                 type="password"
                 autoComplete="current-password"
-                value={contrasena}
-                onChange={(e) => setContrasena(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required
                 className="h-10 bg-card"
               />

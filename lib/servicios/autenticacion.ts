@@ -27,19 +27,19 @@ const HASH_DE_RELLENO = '$2b$10$yywJMjD0N8yEv9bwnydC.uzBRh/1Tp3ch6DMjgFrg.EJOiZf
 // "unknown": pueden ser cualquier cosa). Validar es trabajo del servicio.
 // Devuelve { id, nombre, email, rol }. Nunca el hash.
 // ─────────────────────────────────────────────────────────────
-export async function iniciarSesion(email: unknown, contrasena: unknown) {
+// "password" es el nombre del campo en la API (consigna, sección 11.3).
+export async function iniciarSesion(email: unknown, password: unknown) {
   // 1. Validar. Juntamos TODOS los errores de campo en "details", así la
   //    pantalla puede marcar los dos campos a la vez.
   const detalles: DetalleError[] = [];
   if (typeof email !== 'string' || email.trim() === '') {
     detalles.push({ campo: 'email', mensaje: 'Es obligatorio.' });
   }
-  if (typeof contrasena !== 'string' || contrasena.trim() === '') {
-    // "password": el nombre del campo en la API (consigna, sección 11.3)
+  if (typeof password !== 'string' || password.trim() === '') {
     detalles.push({ campo: 'password', mensaje: 'Es obligatoria.' });
   }
   // La segunda parte del if le confirma a TypeScript que son textos
-  if (detalles.length > 0 || typeof email !== 'string' || typeof contrasena !== 'string') {
+  if (detalles.length > 0 || typeof email !== 'string' || typeof password !== 'string') {
     throw new ApiError(422, 'VALIDACION', 'Hay campos con errores.', detalles);
   }
 
@@ -48,9 +48,10 @@ export async function iniciarSesion(email: unknown, contrasena: unknown) {
   //    La contraseña NO se toca: ahí sí importan mayúsculas y espacios.
   const emailNormalizado = email.trim().toLowerCase();
 
-  // 3. Buscar al usuario. Esta es la ÚNICA consulta del sistema que trae
-  //    el hash de la contraseña, porque hay que compararlo. El hash se
-  //    usa acá adentro y nunca sale de esta función.
+  // 3. Buscar al usuario. Esta consulta trae el hash de la contraseña
+  //    porque hay que compararlo (la otra que lo lee es cambiarContrasena,
+  //    en usuarios.ts). El hash se usa acá adentro y nunca sale de esta
+  //    función.
   const filas = await db.select().from(usuarios).where(eq(usuarios.email, emailNormalizado));
   const usuario = filas[0];
 
@@ -63,7 +64,7 @@ export async function iniciarSesion(email: unknown, contrasena: unknown) {
   if (usuario) {
     hash = usuario.contrasenaHash;
   }
-  const contrasenaCorrecta = await verificarContrasena(contrasena, hash);
+  const contrasenaCorrecta = await verificarContrasena(password, hash);
 
   // 4. Tres formas de fallar, UNA sola respuesta:
   //    - el usuario no existe

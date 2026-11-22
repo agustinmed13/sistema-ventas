@@ -183,6 +183,23 @@ export async function listarUsuarios(
 }
 
 // ═════════════════════════════════════════════════════════════
+// obtenerUsuario — un usuario, para la pantalla de edición (RF-U4).
+// Solo admin. La consigna no define GET /api/usuarios/{id}: esta función
+// la usa directo la página /usuarios/[id] (Server Component, consigna 10.6).
+// ═════════════════════════════════════════════════════════════
+export async function obtenerUsuario(usuario: UsuarioSesion, idTexto: string) {
+    const id = leerId(idTexto);
+    exigirAdmin(usuario);
+
+    const [fila] = await db.select().from(usuarios).where(eq(usuarios.id, id));
+    if (!fila) {
+        throw new ApiError(404, 'NO_ENCONTRADO', 'No existe ese usuario.');
+    }
+
+    return aUsuarioApi(fila);
+}
+
+// ═════════════════════════════════════════════════════════════
 // crearUsuario — POST /api/usuarios (RF-U4). Solo admin.
 //
 // datos (sin validar):
