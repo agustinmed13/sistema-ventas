@@ -298,6 +298,60 @@ Códigos según `requerimientos.md` de la cátedra.
   y no se puede desactivar una categoría con productos activos
   (`409 CATEGORIA_EN_USO`).
 
+### Clientes y cuenta corriente
+
+Las reglas viven en `lib/servicios/clientes.ts` y `lib/servicios/pagos.ts`.
+
+- **RF-C1 — Listado.** `/clientes`: búsqueda por nombre o documento sin
+  distinguir mayúsculas, tildes, puntos ni guiones (`28456123` encuentra a
+  `28.456.123`), con el saldo de cada cliente y paginado; los filtros viven en
+  la URL. El saldo no se guarda: se calcula siempre como débitos menos créditos
+  de `movimientos_cuenta` (regla 7). API: `GET /api/clientes`.
+- **RF-C2 — Alta y edición.** `/clientes/nuevo` y `/clientes/[id]/editar`, con
+  un mismo formulario que marca los campos obligatorios y muestra cada error
+  del servidor debajo de su campo. El documento se guarda sin puntos ni
+  guiones y el par tipo + número es único (`409 DOCUMENTO_DUPLICADO`); sin
+  cuenta corriente, el límite de crédito queda en `null`. Todas las
+  validaciones de campo están en una sola función, `validarDatosCliente()`, que
+  usan el alta y la edición. API: `POST /api/clientes` (también la usa el alta
+  rápida de Nueva venta) y `PATCH /api/clientes/{id}`.
+- **RF-C3 — Ficha.** `/clientes/[id]`: datos, saldo, límite, disponible
+  (`limiteCredito − saldo`) y las 6 últimas facturas con link al comprobante.
+  API: `GET /api/clientes/{id}`.
+- **RF-C4 — Cuenta corriente.** En la ficha: movimientos en orden cronológico
+  con el saldo acumulado en cada renglón, filtro por fechas (en hora de
+  Argentina) con saldo anterior, y links a la factura o al recibo de cada
+  movimiento. API: `GET /api/clientes/{id}/cuenta`.
+- **RF-C5 — Registrar pago.** Desde la ficha: importe, medio (efectivo,
+  transferencia o tarjeta de débito) y observación. El pago y su crédito en
+  `movimientos_cuenta` se graban en una sola transacción, con número de recibo
+  correlativo y propio (`R 0001-00000001`). Un pago que supera la deuda
+  responde `422 PAGO_SUPERA_DEUDA` (regla 8), y uno a un cliente sin cuenta
+  corriente, `422 CUENTA_CORRIENTE_NO_HABILITADA`. El recibo se puede ver e
+  imprimir en `/clientes/recibos/[id]`, con el saldo que le quedó al cliente
+  después de ese pago. API: `POST /api/clientes/{id}/pagos` y
+  `GET /api/pagos/{id}`.
+- **RF-C6 — Saldos.** En el listado, "Solo con deuda" y orden por mayor deuda,
+  con el total adeudado de todos los clientes que deben. API: `conDeuda=true`
+  (agrega `totalAdeudado`) y `orden=saldo`.
+- **RF-C7 — Baja.** Desde la ficha, con confirmación
+  (`PATCH /api/clientes/{id}` con `"activo": false`); se puede reactivar. No se
+  puede dar de baja ni quitarle la cuenta corriente a un cliente con saldo
+  distinto de cero (`422 SALDO_PENDIENTE`).
+
+### Inicio
+
+- **RF-T1 — Indicadores**, **RF-T2 — Gráficos** y **RF-T3 — Más vendidos.**
+  La pantalla de inicio (`/`) muestra las ventas del día y del mes (cantidad,
+  importe y ticket promedio), el total adeudado en cuentas corrientes, la
+  cantidad de productos bajo el mínimo (con link a la lista para reponer), un
+  gráfico de barras con las ventas de los últimos 30 días, uno de dona con las
+  ventas del mes por forma de pago (Chart.js con `react-chartjs-2`) y los 5
+  productos más vendidos del mes por unidades. Solo cuentan las facturas
+  emitidas, y los días se calculan en hora de Argentina. Para no repetir
+  reglas, el total adeudado sale de `listarClientes()` y el bajo mínimo de
+  `listarProductos()`. API: `GET /api/tablero` (`lib/servicios/tablero.ts`).
+
 ### Datos de prueba
 
 - 2 usuarios (uno por rol), 5 categorías, 30 productos, 10 clientes y 50
@@ -329,11 +383,10 @@ Códigos según `requerimientos.md` de la cátedra.
 
 ### Clientes y cuenta corriente
 
-- **RF-C1 — Listado**, **RF-C2 — Alta y edición**, **RF-C3 — Ficha**,
-  **RF-C4 — Cuenta corriente**, **RF-C5 — Registrar pago**, **RF-C6 — Saldos**
-  y **RF-C7 — Baja**. (Los pagos de los datos de prueba hoy se cargan
-  directamente desde el seed; cuando exista el servicio de pagos, el seed tiene
-  que usarlo.)
+- RF-C1 a RF-C7 están implementados.
+- **Seed:** los pagos de los datos de prueba todavía se cargan directamente en
+  las tablas. El servicio ya existe (`registrarPago()` en
+  `lib/servicios/pagos.ts`) y el seed tiene que usarlo (sección 10.7).
 
 ### Usuarios
 
@@ -341,20 +394,14 @@ Códigos según `requerimientos.md` de la cátedra.
 
 ### Inicio
 
-- **RF-T1 — Indicadores**, **RF-T2 — Gráficos** (Chart.js, todavía no
-  instalado) y **RF-T3 — Más vendidos.** La pantalla de inicio es por ahora un
-  título.
+- Nada pendiente: RF-T1 a RF-T3 están implementados.
 
 ### Transversales
 
-- **Paginación:** implementada en las API de facturas y productos y en el
-  listado de facturas; falta en los listados que todavía no existen.
+- **Paginación:** implementada en las API de facturas, productos y clientes y
+  en los listados de facturas, productos y clientes.
 - **Validación con Zod compartida** entre formularios y servidor (sugerida por
   la consigna, punto 6 de la lista de la sección 10.8): no implementada; hoy la
   validación está escrita a mano en cada servicio.
-- **Rutas de la API (sección 11.2 y 11.9):** hay 8 de las 31. Faltan:
-  - `GET` y `POST /api/clientes`, `GET` y `PATCH /api/clientes/{id}`,
-    `GET /api/clientes/{id}/cuenta`, `POST /api/clientes/{id}/pagos`,
-    `GET /api/pagos/{id}`
-  - `GET /api/facturas/proximo-numero`
-  - `GET /api/tablero`
+- **Rutas de la API (sección 11.2 y 11.9):** falta
+  `GET /api/facturas/proximo-numero`.
