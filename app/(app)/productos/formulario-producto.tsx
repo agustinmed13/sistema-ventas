@@ -22,9 +22,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Campo from '@/components/campo';
 import CampoImporte from '@/components/campo-importe';
-// Convierte "12.500,50" (pesos escritos) en 1250050 (centavos). Es de
-// Agustín; la usamos igual que el formulario de clientes.
-import { pesosACentavos } from '@/app/(app)/ventas/nueva/pesos';
+import { pesosACentavos } from '@/lib/formato';
+// Convierte "12.500,50" (pesos escritos) en 1250050 (centavos).
 
 type ProductoExistente = {
     id: number;

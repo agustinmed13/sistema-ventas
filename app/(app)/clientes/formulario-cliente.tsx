@@ -20,8 +20,8 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { pesosACentavos } from '@/lib/formato';
 // Convierte "50.000" (pesos escritos) en 5000000 (centavos). Es de Agustín.
-import { pesosACentavos } from '@/app/(app)/ventas/nueva/pesos';
 
 // Los datos actuales del cliente, cuando se edita (sección 5.1)
 type ClienteExistente = {

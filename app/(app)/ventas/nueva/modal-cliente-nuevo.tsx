@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { pesosACentavos } from './pesos';
+import { pesosACentavos } from '@/lib/formato';
 
 // Lo que la pantalla de venta necesita saber del cliente creado
 export type ClienteElegido = {

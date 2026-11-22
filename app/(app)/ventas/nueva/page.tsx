@@ -13,8 +13,7 @@ import { useState, useEffect, useRef, type FormEvent, type KeyboardEvent } from 
 import { useRouter } from 'next/navigation';
 import { UserPlus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { formatearImporte, formatearDocumento } from '@/lib/formato';
-import { pesosACentavos } from './pesos';
+import { formatearImporte, formatearDocumento, pesosACentavos } from '@/lib/formato';
 import ModalClienteNuevo, { type ClienteElegido } from './modal-cliente-nuevo';
 
 // ─────────────────────────────────────────────────────────────

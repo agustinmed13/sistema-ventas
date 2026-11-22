@@ -15,10 +15,9 @@ import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { formatearImporte } from '@/lib/formato';
+import { formatearImporte, pesosACentavos } from '@/lib/formato';
 // Convierte "15.000,50" (pesos escritos) en 1500050 (centavos). Es de
 // Agustín: la reusamos para no tener la misma conversión en dos lugares.
-import { pesosACentavos } from '@/app/(app)/ventas/nueva/pesos';
 
 type Props = {
   clienteId: number;

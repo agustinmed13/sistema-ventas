@@ -1,4 +1,5 @@
 // Formatos del sistema: importes, fechas, número de factura y documentos.
+// También la conversión inversa de importes (pesosACentavos).
 //
 // REGLA DEL PROYECTO (consigna 10.6 y AGENTS.md sección 11): ningún componente
 // ni pantalla formatea por su cuenta. Todos importan de acá, así el formato es
@@ -28,6 +29,27 @@ export function formatearImporte(centavos: number): string {
 
   const signo = esNegativo ? '-' : '';
   return `${signo}$ ${pesosConPuntos},${centavosTexto}`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// pesosACentavos — el camino inverso de formatearImporte()
+//
+// Convierte lo que ESCRIBE el usuario en pesos a centavos enteros
+// (regla 10). La usan todos los formularios que piden un importe:
+// monto recibido, límite de crédito, precio de un producto, pago.
+//
+//   "15000"     → 1500000
+//   "15.000"    → 1500000   (el punto es separador de miles, como acá)
+//   "15000,50"  → 1500050   (la coma es el decimal)
+//   "abc"       → null      (no es un monto válido)
+// ─────────────────────────────────────────────────────────────
+export function pesosACentavos(texto: string): number | null {
+  const limpio = texto.trim().replace(/\./g, '').replace(',', '.');
+  // Solo dígitos, y opcionalmente un punto con 1 o 2 decimales
+  if (!/^\d+(\.\d{1,2})?$/.test(limpio)) return null;
+  // Math.round corrige el error de los decimales en JavaScript:
+  // 0.29 * 100 da 28.999999999999996, y redondeado da 29.
+  return Math.round(Number(limpio) * 100);
 }
 
 // ─────────────────────────────────────────────────────────────
