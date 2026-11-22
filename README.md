@@ -13,13 +13,11 @@ guarda los datos en una base Turso.
 
 ## 2. Integrantes
 
-> **TODO:** completar nombre y legajo de cada integrante.
-
-| Nombre | Legajo |
-|---|---|
-| TODO | TODO |
-| TODO | TODO |
-| TODO | TODO |
+| Nombre | Legajo | Módulos |
+|---|---|---|
+| José Agustín Medina Rodríguez | 61124 | Base de datos, datos de prueba, Ventas (RF-V) |
+| Jazmín Vittar | 61077 | Interfaz general, Productos (RF-P), Usuarios (RF-U) |
+| María José Andrada | 61543 | Clientes (RF-C), Inicio (RF-T) |
 
 ## 3. URL pública
 
@@ -31,8 +29,8 @@ Los crea el script de datos iniciales (`npm run db:seed`).
 
 | Email | Rol | Contraseña |
 |---|---|---|
-| `admin@mostrador.com` | admin | **TODO** |
-| `vendedor@mostrador.com` | vendedor | **TODO** |
+| `admin@mostrador.com` | admin | `Mostrador2026` |
+| `vendedor@mostrador.com` | vendedor | `Vendedor2026` |
 
 El **admin** puede todo. El **vendedor** opera el mostrador pero no puede, por
 ejemplo, anular facturas: si lo intenta, el servidor responde `403`.
@@ -363,16 +361,17 @@ Las reglas viven en `lib/servicios/clientes.ts` y `lib/servicios/pagos.ts`.
 
 ## 10. Pendientes
 
-> **⚠️ TODO — COMPLETAR ANTES DE ENTREGAR.** Esta sección refleja el estado del
-> repositorio al momento de escribirla. Hay módulos en desarrollo: revisar cada
-> punto contra el código final y borrar lo que se haya terminado.
+Esta sección refleja el estado del repositorio al momento de la entrega.
+Cada punto se verificó contra el código.
+
+La consigna (sección 10) permite documentar lo que no entra citando su código
+RF. Priorizamos las cuatro operaciones del guion de la defensa — venta al
+contado, venta en cuenta corriente, pago y anulación — y las dejamos
+funcionando de punta a punta sobre la URL pública. Lo que sigue es lo que
+quedó afuera de ese alcance.
 
 ### Ventas
 
-- **RF-V2 — Comprador.** La pantalla de venta ya tiene el buscador de clientes
-  y el formulario modal de alta, pero dependen de `GET /api/clientes` y
-  `POST /api/clientes`, que todavía no existen. Hasta entonces, toda venta es a
-  consumidor final.
 - **RF-V7 — Comprobante:** falta mostrar los datos del comercio.
 - **RF-V8 — Listado:** en la pantalla faltan los filtros por cliente y por
   vendedor (la API ya los admite por parámetro).
@@ -386,10 +385,7 @@ Las reglas viven en `lib/servicios/clientes.ts` y `lib/servicios/pagos.ts`.
 
 ### Clientes y cuenta corriente
 
-- RF-C1 a RF-C7 están implementados.
-- **Seed:** los pagos de los datos de prueba todavía se cargan directamente en
-  las tablas. El servicio ya existe (`registrarPago()` en
-  `lib/servicios/pagos.ts`) y el seed tiene que usarlo (sección 10.7).
+- Nada pendiente: RF-C1 a RF-C7 están implementados.
 
 ### Usuarios
 
@@ -406,5 +402,5 @@ Las reglas viven en `lib/servicios/clientes.ts` y `lib/servicios/pagos.ts`.
 - **Validación con Zod compartida** entre formularios y servidor (sugerida por
   la consigna, punto 6 de la lista de la sección 10.8): no implementada; hoy la
   validación está escrita a mano en cada servicio.
-- **Rutas de la API (sección 11.2 y 11.9):** falta
-  `GET /api/facturas/proximo-numero`.
+- **Rutas de la API (secciones 11.2 y 11.9):** las 23 rutas de la
+  especificación están implementadas.
