@@ -12,6 +12,7 @@
 //   listarFacturas  RF-V8
 //   obtenerFactura  RF-V7
 //   anularFactura   RF-V9
+//   proximoNumero   RF-V4 (informativo: el numero real lo asigna crearFactura)
 //
 // NOMBRES DE CAMPO (AGENTS.md 5.1, consigna 11.6): la API usa los nombres
 // exactos de la consigna (total, precioUnitario, vendedor, pago.forma...),
@@ -674,6 +675,39 @@ export async function listarFacturas(usuario: UsuarioSesion, filtros: FiltrosFac
   }));
 
   return { data, page, pageSize, total: totales.total, totalEmitido: totales.totalEmitido };
+}
+
+// ═════════════════════════════════════════════════════════════
+// proximoNumero — qué número saldría si se facturara ahora (RF-V4)
+//
+// Es INFORMATIVO: sirve para mostrarlo en la pantalla de nueva venta
+// antes de confirmar. El número que vale se asigna adentro de la
+// transacción de crearFactura(), porque entre esta consulta y la venta
+// puede entrar otra factura y correr el número.
+//
+// Si dos vendedores consultan al mismo tiempo, los dos ven el mismo
+// número, y está bien: solo el que confirme primero se lo queda. Que no
+// se repita lo garantiza el índice único sobre (punto_venta, numero),
+// no esta consulta.
+//
+// No recibe el usuario porque no aplica ninguna regla que dependa de
+// él: los dos roles pueden consultarlo. La ruta igual exige sesión.
+// ═════════════════════════════════════════════════════════════
+export async function proximoNumero() {
+  // El número más alto de este punto de venta, + 1.
+  // "?? 0": si todavía no hay ninguna factura, max devuelve null.
+  const [ultima] = await db
+    .select({ maximo: max(facturas.numero) })
+    .from(facturas)
+    .where(eq(facturas.puntoVenta, PUNTO_VENTA));
+
+  const numero = (ultima.maximo ?? 0) + 1;
+
+  return {
+    puntoVenta: PUNTO_VENTA,
+    numero,
+    numeroFormateado: formatearNumeroFactura(PUNTO_VENTA, numero),
+  };
 }
 
 // ═════════════════════════════════════════════════════════════

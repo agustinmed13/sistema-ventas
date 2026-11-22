@@ -21,12 +21,15 @@ import ModalClienteNuevo, { type ClienteElegido } from './modal-cliente-nuevo';
 // TIPOS — la forma de los datos que maneja la pantalla
 // ─────────────────────────────────────────────────────────────
 
-// Lo que devuelve GET /api/productos
+// Lo que devuelve GET /api/productos.
+// El campo de la API se llama "precio" (sección 11.4): viene en centavos
+// enteros igual, pero sin el sufijo. Adentro de esta pantalla le seguimos
+// diciendo precioCentavos, que es más claro para nosotros.
 type Producto = {
   id: number;
   codigo: string;
   descripcion: string;
-  precioCentavos: number;
+  precio: number;
   existencia: number;
 };
 
@@ -293,7 +296,7 @@ export default function NuevaVentaPage() {
           productoId: producto.id,
           codigo: producto.codigo,
           descripcion: producto.descripcion,
-          precioCentavos: producto.precioCentavos,
+          precioCentavos: producto.precio,
           existencia: producto.existencia,
           cantidad: 1,
         },
@@ -552,7 +555,7 @@ export default function NuevaVentaPage() {
                       <span className="text-muted-foreground">{p.codigo}</span> {p.descripcion}
                     </span>
                     <span className="shrink-0 text-right">
-                      {formatearImporte(p.precioCentavos)}
+                      {formatearImporte(p.precio)}
                       <span className={`block text-xs ${p.existencia < 1 ? 'text-destructive' : 'text-muted-foreground'}`}>
                         Existencia: {p.existencia}
                       </span>

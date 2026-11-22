@@ -33,6 +33,7 @@ import {
 import { ApiError } from '../lib/errores';
 import { moverStock } from '../lib/servicios/stock';
 import { crearFactura, type UsuarioSesion } from '../lib/servicios/facturas';
+import { registrarPago } from '../lib/servicios/pagos';
 
 // ─────────────────────────────────────────────────────────────
 // Generador de números "al azar" pero reproducible.
@@ -418,19 +419,24 @@ for (let i = 0; i < facturasEnOrden.length; i++) {
 // ─────────────────────────────────────────────────────────────
 // 10. Pagos — algunos clientes cancelan parte de su deuda
 //
-// PENDIENTE: el servicio de pagos lo está escribiendo una compañera.
-// Cuando exista registrarPago() en lib/servicios/pagos.ts, hay que
-// usarlo acá en lugar de insertar directo en las tablas (consigna 10.7).
+// Usa registrarPago() del servicio, igual que las facturas usan
+// crearFactura() (consigna 10.7). El servicio aplica la regla 8 por su
+// cuenta: si el importe supera la deuda, lanza PAGO_SUPERA_DEUDA y el
+// pago no se graba. Así los datos de prueba no pueden violar las reglas.
 //
-// Mientras tanto se respeta la regla 8 a mano: un pago NUNCA supera la
-// deuda. Se calcula el saldo REAL de cada cliente desde
-// movimientos_cuenta (débitos − créditos, regla 7), después de las
-// facturas, y se paga como mucho ese monto.
+// El saldo se calcula igual acá, pero solo para DECIDIR cuánto pagar.
+// Quien verifica que el pago sea válido es el servicio.
+//
+// Las fechas: registrarPago() pone la fecha del servidor (ahora), como
+// corresponde en producción. Para que los datos de prueba queden
+// repartidos en el tiempo, después se corrigen con un UPDATE — el mismo
+// recurso que ya se usa con las facturas en el paso 9.
 // ─────────────────────────────────────────────────────────────
 console.log('Creando pagos...');
 
-const mediosPago = ['efectivo', 'transferencia', 'tarjeta'] as const;
-let numeroRecibo = 1;
+// Los nombres que acepta la API (sección 5.1). El servicio traduce
+// 'tarjeta_debito' a 'tarjeta', que es como se guarda en la tabla.
+const mediosPago = ['efectivo', 'transferencia', 'tarjeta_debito'] as const;
 
 for (const cliente of clientesACuenta) {
   const movimientos = await db
@@ -466,32 +472,18 @@ for (const cliente of clientesACuenta) {
   const hasta = Date.now();
   const fecha = new Date(desde + azar() * (hasta - desde)).toISOString();
 
-  // Dos tablas → una transacción (AGENTS.md sección 3)
-  await db.transaction(async (tx) => {
-    const [pagoCreado] = await tx
-      .insert(pagos)
-      .values({
-        numeroRecibo: numeroRecibo++,
-        clienteId: cliente.id,
-        fecha,
-        importeCentavos,
-        medio: elegir([...mediosPago]),
-        observacion: null,
-        usuarioId: idVendedor,
-      })
-      .returning();
-
-    // El pago es un CRÉDITO: baja lo que debe el cliente
-    await tx.insert(movimientosCuenta).values({
-      clienteId: cliente.id,
-      tipo: 'credito',
-      importeCentavos,
-      fecha,
-      descripcion: `Recibo ${String(pagoCreado.numeroRecibo).padStart(8, '0')}`,
-      facturaId: null,
-      pagoId: pagoCreado.id,
-    });
+  // El servicio hace todo: valida, numera el recibo, graba el pago y el
+  // crédito en la cuenta, los dos en una transacción. El id del cliente
+  // va como texto porque la función lo recibe tal como llega en la URL.
+  const recibo = await registrarPago(vendedor, String(cliente.id), {
+    importe: importeCentavos,
+    medio: elegir([...mediosPago]),
   });
+
+  // Retro-fechar el pago y su movimiento de cuenta, para que los datos
+  // de prueba no queden todos con la fecha de hoy.
+  await db.update(pagos).set({ fecha }).where(eq(pagos.id, recibo.id));
+  await db.update(movimientosCuenta).set({ fecha }).where(eq(movimientosCuenta.pagoId, recibo.id));
 }
 
 // ─────────────────────────────────────────────────────────────
