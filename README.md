@@ -202,14 +202,29 @@ Códigos según `requerimientos.md` de la cátedra.
 ### Usuarios y acceso
 
 - **RF-U1 — Sesión.** Inicio de sesión con email y contraseña, y cierre de
-  sesión (`/login`, `POST /api/auth/login`, `POST /api/auth/logout`). Si el
-  email no existe, la contraseña es incorrecta o el usuario está inactivo, la
-  respuesta es la misma (`401`), para no revelar qué cuentas existen.
+  sesión (`/login`, `POST /api/auth/login` con `{ email, password }`,
+  `POST /api/auth/logout`). Si el email no existe, la contraseña es incorrecta
+  o el usuario está inactivo, la respuesta es la misma (`401`), para no revelar
+  qué cuentas existen.
 - **RF-U2 — Protección.** Las pantallas del sistema redirigen a `/login` sin
   sesión válida, y todas las rutas de la API implementadas, salvo el login,
   responden `401` sin sesión. `GET /api/auth/me` devuelve el usuario actual.
 - **RF-U3 — Primer administrador.** Lo crea el script de datos iniciales, con
   la contraseña tomada de `ADMIN_PASSWORD`.
+- **RF-U4 — Gestión de usuarios.** Solo el administrador: `/usuarios` lista con
+  búsqueda por nombre o email, filtro por estado y paginado; alta, edición de
+  nombre, email y rol, y desactivación con confirmación (`GET` y
+  `POST /api/usuarios`, `PATCH /api/usuarios/{id}`). El email es único
+  (`409 EMAIL_DUPLICADO`). Un admin no puede desactivarse ni quitarse el rol
+  (`422 OPERACION_SOBRE_SI_MISMO`). Un usuario desactivado no puede entrar, y si
+  tenía la sesión abierta queda afuera en su próximo pedido. El hash de la
+  contraseña nunca sale en las respuestas.
+- **RF-U5 — Contraseñas.** El administrador las restablece desde la pantalla del
+  usuario (`POST /api/usuarios/{id}/reset-password`): se genera una contraseña
+  temporal que se muestra una sola vez. Cada usuario cambia la suya en
+  `/perfil` (se llega tocando el nombre en la barra superior), con
+  `PUT /api/auth/password`: pide la actual (`422 CONTRASENA_ACTUAL_INCORRECTA`
+  si no coincide) y la nueva, de al menos 8 caracteres.
 
 ### Ventas
 
@@ -245,9 +260,27 @@ Códigos según `requerimientos.md` de la cátedra.
 
 ### Productos
 
-- **RF-P1 — Catálogo (solo API).** `GET /api/productos`: búsqueda por código o
-  descripción sin distinguir mayúsculas ni tildes, filtro por categoría y por
-  estado, marca de productos bajo el stock mínimo y paginado.
+- **RF-P1 — Catálogo.** `/productos`: búsqueda por código o descripción sin
+  distinguir mayúsculas ni tildes, filtro por categoría, "solo bajo mínimo" y,
+  para el admin, por estado; paginado y marca visible de los productos bajo el
+  stock mínimo (el dato `bajoMinimo` lo calcula el servidor). Cada producto
+  tiene su ficha en `/productos/[id]`. API: `GET /api/productos` y
+  `GET /api/productos/{id}`.
+- **RF-P2 — Alta y edición.** Solo el administrador, desde el catálogo y la
+  ficha (`POST /api/productos`, `PATCH /api/productos/{id}`). El código es único
+  sin distinguir mayúsculas (`409 CODIGO_DUPLICADO`). La existencia no se
+  edita: si llega en el pedido, `422`. El stock inicial se registra como un
+  movimiento de ingreso con motivo *Stock inicial*, a través de `moverStock()`
+  y en la misma transacción que el alta.
+- **RF-P3 — Baja lógica.** Desde la ficha, con confirmación
+  (`PATCH /api/productos/{id}` con `"activo": false`). El producto deja de
+  aparecer en el catálogo y en ventas, pero conserva su historial y se puede
+  reactivar.
+- **RF-P7 — Categorías (solo API).** `GET /api/categorias` devuelve las activas
+  sin paginar; `POST /api/categorias` y `PATCH /api/categorias/{id}` (solo
+  admin) para alta, renombre y desactivación con `"activa"`. El nombre es único
+  sin distinguir mayúsculas ni tildes (`409 NOMBRE_DUPLICADO`), y no se puede
+  desactivar una categoría con productos activos (`409 CATEGORIA_EN_USO`).
 
 ### Datos de prueba
 
@@ -273,16 +306,15 @@ Códigos según `requerimientos.md` de la cátedra.
 
 ### Productos y existencias
 
-- **RF-P1 — Catálogo:** falta la pantalla del catálogo (la API existe).
-- **RF-P2 — Alta y edición de productos.** (Hoy el stock inicial se carga como
-  ingreso solo desde el seed.)
-- **RF-P3 — Baja lógica de productos.** (Las ventas ya rechazan productos
-  inactivos, pero no hay forma de desactivarlos.)
-- **RF-P4 — Ingreso de stock** y **RF-P5 — Egreso de stock.** (`moverStock()`
-  ya admite ingresos y egresos; faltan la ruta y la pantalla.)
-- **RF-P6 — Movimientos de stock.** (Se registran en cada operación; falta
-  consultarlos.)
-- **RF-P7 — Categorías.**
+- **RF-P4 — Ingreso de stock** y **RF-P5 — Egreso de stock.** `moverStock()`
+  ya admite ingresos y egresos (y no deja la existencia en negativo); faltan
+  `POST /api/productos/{id}/movimientos` y el formulario en la ficha del
+  producto.
+- **RF-P6 — Movimientos de stock.** Se registran en cada operación (ventas,
+  anulaciones y stock inicial); faltan `GET /api/productos/{id}/movimientos`,
+  `GET /api/movimientos-stock` y mostrarlos en la ficha del producto.
+- **RF-P7 — Categorías:** la API está completa; falta la pantalla de alta,
+  renombre y desactivación.
 
 ### Clientes y cuenta corriente
 
@@ -294,8 +326,7 @@ Códigos según `requerimientos.md` de la cátedra.
 
 ### Usuarios
 
-- **RF-U4 — Gestión de usuarios** y **RF-U5 — Contraseñas** (restablecer y
-  cambiar).
+- Nada pendiente: RF-U1 a RF-U5 están implementados.
 
 ### Inicio
 
@@ -311,13 +342,7 @@ Códigos según `requerimientos.md` de la cátedra.
   la consigna, punto 6 de la lista de la sección 10.8): no implementada; hoy la
   validación está escrita a mano en cada servicio.
 - **Rutas de la API (sección 11.2 y 11.9):** hay 8 de las 31. Faltan:
-  - `PUT /api/auth/password`
-  - `GET` y `POST /api/usuarios`, `PATCH /api/usuarios/{id}`,
-    `POST /api/usuarios/{id}/reset-password`
-  - `GET` y `POST /api/categorias`, `PATCH /api/categorias/{id}`
-  - `GET /api/productos/{id}`, `POST /api/productos`,
-    `PATCH /api/productos/{id}`, `GET` y `POST /api/productos/{id}/movimientos`,
-    `GET /api/movimientos-stock`
+  - `GET` y `POST /api/productos/{id}/movimientos`, `GET /api/movimientos-stock`
   - `GET` y `POST /api/clientes`, `GET` y `PATCH /api/clientes/{id}`,
     `GET /api/clientes/{id}/cuenta`, `POST /api/clientes/{id}/pagos`,
     `GET /api/pagos/{id}`
