@@ -34,6 +34,15 @@ const DEMO = {
   vendedor: { email: 'vendedor@mostrador.com', password: 'Vendedor2026' },
 };
 
+// Datos del grupo para la esquina inferior derecha (los mismos del
+// README, sección 2). Para cambiar un nombre o legajo, se toca acá.
+const GRUPO = 14;
+const integrantes = [
+  { nombre: 'José Agustín Medina Rodríguez', legajo: 61124 },
+  { nombre: 'Jazmín Vittar', legajo: 61077 },
+  { nombre: 'María José Andrada', legajo: 61543 },
+];
+
 // El cuadrado con la "M": el mismo logo que el panel lateral del sistema
 // (components/marco-app.tsx), para que se reconozca al entrar.
 function Logo() {
@@ -158,8 +167,12 @@ export default function PaginaLogin() {
         <p className="text-xs text-sidebar-foreground/60">2º Parcial · Programación IV</p>
       </section>
 
-      {/* ═══ DERECHA: el formulario ═══ */}
-      <section className="flex items-center justify-center px-4 py-10">
+      {/* ═══ DERECHA: el formulario ═══
+          flex-col: arriba el formulario (ocupa todo el alto libre con
+          flex-1) y abajo el pie con el grupo. Así el pie queda en la
+          esquina inferior derecha sin taparse nunca con el formulario. */}
+      <section className="flex flex-col px-4 py-6">
+        <div className="flex flex-1 items-center justify-center py-4">
         <div className="w-full max-w-sm space-y-6">
           {/* En el celular la zona izquierda no se ve: mostramos solo la
               marca arriba del formulario. md:hidden = se oculta desde 768px */}
@@ -255,6 +268,20 @@ export default function PaginaLogin() {
             </p>
           </div>
         </div>
+        </div>
+
+        {/* ═══ Pie: número de grupo e integrantes con legajo ═══
+            self-end = se pega a la derecha; text-right alinea el texto. */}
+        <footer className="self-end text-right text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">Grupo {GRUPO}</p>
+          <ul>
+            {integrantes.map((integrante) => (
+              <li key={integrante.legajo}>
+                {integrante.nombre} · Legajo {integrante.legajo}
+              </li>
+            ))}
+          </ul>
+        </footer>
       </section>
     </main>
   );
